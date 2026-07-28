@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Fraunces", Georgia, serif;
+  --font-sans: "DM Sans", system-ui, sans-serif;
+
+  --color-veld-950: #0f1f18;
+  --color-veld-900: #1a3a2a;
+  --color-veld-800: #234d38;
+  --color-veld-700: #2d5a3d;
+  --color-veld-600: #3d7a52;
+  --color-veld-500: #4f9166;
+  --color-veld-400: #6ba87f;
+  --color-veld-300: #8fbc8f;
+  --color-veld-200: #c5dfc8;
+  --color-veld-100: #e4f0e6;
+  --color-veld-50: #f2f7f3;
+
+  --color-sun-600: #9a6f1f;
+  --color-sun-500: #c4892a;
+  --color-sun-400: #d4a04a;
+  --color-sun-300: #e0b86e;
+  --color-sun-100: #f5e9d0;
+
+  --color-mist: #eef3ef;
+  --color-ink: #1c2420;
+  --color-ink-muted: #5a6b61;
+  --color-danger: #b33a3a;
+  --color-danger-bg: #fceaea;
+  --color-warn: #b87a1a;
+  --color-warn-bg: #fef3e0;
+}
+
+@layer base {
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply m-0 min-h-screen bg-mist font-sans text-ink antialiased;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 0% 0%, rgba(143, 188, 143, 0.18), transparent),
+      radial-gradient(ellipse 60% 40% at 100% 0%, rgba(196, 137, 42, 0.1), transparent);
+    background-attachment: fixed;
+  }
+
+  #root {
+    @apply min-h-screen;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display);
+  }
+}
