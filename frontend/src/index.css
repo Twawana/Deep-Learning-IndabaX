@@ -1,0 +1,153 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Fraunces", Georgia, serif;
+  --font-sans: "DM Sans", system-ui, sans-serif;
+
+  --color-veld-950: #0f1f18;
+  --color-veld-900: #1a3a2a;
+  --color-veld-800: #234d38;
+  --color-veld-700: #2d5a3d;
+  --color-veld-600: #3d7a52;
+  --color-veld-500: #4f9166;
+  --color-veld-400: #6ba87f;
+  --color-veld-300: #8fbc8f;
+  --color-veld-200: #c5dfc8;
+  --color-veld-100: #e4f0e6;
+  --color-veld-50: #f2f7f3;
+
+  --color-sun-600: #9a6f1f;
+  --color-sun-500: #c4892a;
+  --color-sun-400: #d4a04a;
+  --color-sun-300: #e0b86e;
+  --color-sun-100: #f5e9d0;
+
+  --color-mist: #eef3ef;
+  --color-ink: #1c2420;
+  --color-ink-muted: #5a6b61;
+  --color-danger: #b33a3a;
+  --color-danger-bg: #fceaea;
+  --color-warn: #b87a1a;
+  --color-warn-bg: #fef3e0;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  html {
+    @apply scroll-smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    @apply m-0 overflow-hidden bg-veld-950 font-sans text-ink antialiased;
+  }
+
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
+  }
+
+  .field-input {
+    @apply w-full rounded-xl border border-veld-200 bg-mist px-3.5 py-3 text-sm outline-none focus:border-veld-500 focus:ring-2 focus:ring-veld-200;
+  }
+}
+
+@layer components {
+  .app-shell {
+    @apply flex h-dvh w-full items-center justify-center overflow-hidden;
+    background:
+      radial-gradient(ellipse 70% 50% at 20% 10%, rgba(143, 188, 143, 0.22), transparent),
+      radial-gradient(ellipse 50% 40% at 90% 80%, rgba(196, 137, 42, 0.16), transparent),
+      #0f1f18;
+  }
+
+  .phone-frame {
+    @apply relative h-full w-full overflow-hidden bg-mist;
+  }
+
+  .phone-frame-inner {
+    @apply relative flex h-full w-full flex-col overflow-hidden;
+  }
+
+  .phone-content {
+    @apply min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[6.75rem] pt-4;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .phone-content-chat {
+    @apply flex flex-col overflow-hidden px-0 pb-[6.25rem] pt-0;
+  }
+
+  .safe-top {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+  }
+
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .floating-tab-shell {
+    padding-bottom: max(0.85rem, calc(env(safe-area-inset-bottom) + 0.45rem));
+  }
+
+  .floating-tab-bar {
+    width: min(100%, 23.5rem);
+    border-radius: 1.65rem;
+    background:
+      linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.72) 0%,
+        rgba(255, 255, 255, 0.48) 100%
+      );
+    border: 1px solid rgba(255, 255, 255, 0.65);
+    box-shadow:
+      0 18px 40px rgba(15, 31, 24, 0.18),
+      0 4px 12px rgba(15, 31, 24, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.85),
+      inset 0 -1px 0 rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(28px) saturate(180%);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+  }
+
+  .nav-indicator {
+    transition:
+      transform 320ms cubic-bezier(0.22, 1, 0.36, 1),
+      width 320ms cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 180ms ease;
+  }
+
+  .page-enter {
+    animation: page-fade 220ms ease-out;
+  }
+}
+
+@keyframes page-fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (min-width: 480px) {
+  .phone-frame {
+    @apply h-[min(860px,94dvh)] w-[min(100%,390px)] rounded-[2rem] border-[6px] border-veld-900 shadow-2xl;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display);
+  }
+}

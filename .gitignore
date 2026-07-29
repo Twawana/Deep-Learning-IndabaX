@@ -1,0 +1,52 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+.env
+.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+backend/.env
+
+# Large Lacuna dataset (download locally — do not commit / deploy)
+# Keep the folder via .gitkeep only
+backend/data/raw/**
+!backend/data/raw/.gitkeep
+
+# Regenerable / bulky processed artifacts (keep CSV for runtime)
+backend/data/processed/advisory_dataset.json
+backend/data/processed/dataset_inspection_report.json
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# Capacitor native projects (generated)
+android
+ios
+.capacitor
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

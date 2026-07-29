@@ -1,0 +1,18 @@
+{
+  "name": "Farmar",
+  "short_name": "Farmar",
+  "description": "AI-powered rangeland and pasture advisory for Namibian farmers",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f1f18",
+  "theme_color": "#1a3a2a",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
