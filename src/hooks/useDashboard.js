@@ -1,11 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
 import { getDashboard } from "../services/api";
 import { getErrorMessage } from "../utils/format";
+import { useFarmContext } from "../context/FarmContext";
 
 export function useDashboard() {
+  const farm = useFarmContext();
+
   const query = useQuery({
-    queryKey: ["dashboard"],
-    queryFn: getDashboard,
+    queryKey: ["dashboard", farm.location, farm.lat, farm.lon],
+    queryFn: () =>
+      getDashboard({
+        location: farm.location,
+        region: farm.region,
+        lat: farm.lat,
+        lon: farm.lon,
+        herd_size: farm.herdSize,
+      }),
   });
 
   return {

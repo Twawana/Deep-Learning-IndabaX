@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import MessageBubble from "./MessageBubble";
 import Loader from "./Loader";
 import { CHAT_SUGGESTIONS } from "../utils/constants";
+import { useSpeechToText, useTextToSpeech } from "../hooks/useSpeech";
 
 export default function ChatBox({
   messages,
@@ -12,73 +13,70 @@ export default function ChatBox({
   const [input, setInput] = useState("");
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
+  const { speak, stop, isSpeaking, supported: ttsSupported } = useTextToSpeech();
+
+  const {
+    isListening,
+    supported: sttSupported,
+    toggle: toggleListen,
+  } = useSpeechToText({
+    onResult: (transcript) => {
+      setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
+    },
+  });
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     if (!input.trim() || isLoading || disabled) return;
-    onSend(input);
+    const text = input;
     setInput("");
+    await onSend(text);
     inputRef.current?.focus();
   };
 
-  const handleSuggestion = (suggestion) => {
-    if (isLoading || disabled) return;
-    onSend(suggestion);
+  const handleSpeak = (text) => {
+    if (isSpeaking) stop();
+    else speak(text);
   };
 
   return (
-    <div className="flex h-full min-h-[28rem] flex-col overflow-hidden rounded-2xl border border-veld-200/80 bg-white/90 shadow-sm backdrop-blur-sm">
-      <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5 sm:px-5">
+    <div className="flex h-full min-h-0 flex-col bg-mist">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-3 py-3">
         {messages.length === 0 && !isLoading ? (
-          <div className="flex h-full flex-col items-center justify-center px-2 py-8 text-center">
-            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-veld-100">
-              <svg
-                className="h-7 w-7 text-veld-700"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={1.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.75 20.25a5.971 5.971 0 01-.75-11.25C7.97 3.75 12 7.444 12 12z"
-                />
-              </svg>
-            </div>
-            <h3 className="font-display text-xl font-semibold text-veld-900">
-              Ask Farmar
-            </h3>
-            <p className="mt-2 max-w-md text-sm text-ink-muted">
-              Get plain-language grazing and livestock advice based on pasture
-              data and recent weather for your camp.
+          <div className="flex h-full flex-col justify-center gap-2 py-6">
+            <p className="mb-1 px-1 text-center text-sm text-ink-muted">
+              Ask about your pasture or herd
             </p>
-            <div className="mt-6 flex flex-wrap justify-center gap-2">
-              {CHAT_SUGGESTIONS.map((suggestion) => (
-                <button
-                  key={suggestion}
-                  type="button"
-                  onClick={() => handleSuggestion(suggestion)}
-                  className="rounded-full border border-veld-200 bg-veld-50 px-3 py-1.5 text-left text-xs font-medium text-veld-800 transition hover:border-veld-400 hover:bg-veld-100"
-                >
-                  {suggestion}
-                </button>
-              ))}
-            </div>
+            {CHAT_SUGGESTIONS.slice(0, 3).map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                onClick={() => onSend(suggestion)}
+                disabled={isLoading || disabled}
+                className="rounded-2xl bg-white px-4 py-3.5 text-left text-sm font-medium text-veld-900 shadow-sm ring-1 ring-veld-100 active:bg-veld-50"
+              >
+                {suggestion}
+              </button>
+            ))}
           </div>
         ) : (
           <>
             {messages.map((message) => (
-              <MessageBubble key={message.id} message={message} />
+              <MessageBubble
+                key={message.id}
+                message={message}
+                onSpeak={ttsSupported ? handleSpeak : undefined}
+                isSpeaking={isSpeaking}
+              />
             ))}
             {isLoading && (
               <div className="flex justify-start">
-                <div className="rounded-2xl rounded-bl-md border border-veld-200 bg-white px-4 py-2 shadow-sm">
-                  <Loader label="Farmar is thinking…" />
+                <div className="rounded-2xl bg-white px-3 py-1 shadow-sm ring-1 ring-veld-100">
+                  <Loader label="Thinking…" compact />
                 </div>
               </div>
             )}
@@ -89,12 +87,27 @@ export default function ChatBox({
 
       <form
         onSubmit={handleSubmit}
-        className="border-t border-veld-100 bg-veld-50/60 p-3 sm:p-4"
+        className="border-t border-veld-100 bg-white px-3 py-2.5"
       >
         <div className="flex items-end gap-2">
-          <label className="sr-only" htmlFor="chat-input">
-            Message
-          </label>
+          {sttSupported && (
+            <button
+              type="button"
+              onClick={toggleListen}
+              disabled={isLoading || disabled}
+              aria-label={isListening ? "Stop listening" : "Speak"}
+              className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full ${
+                isListening
+                  ? "bg-danger text-white"
+                  : "bg-mist text-veld-800 active:bg-veld-100"
+              } disabled:opacity-50`}
+            >
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 14a3 3 0 003-3V6a3 3 0 10-6 0v5a3 3 0 003 3zm5-3a5 5 0 01-10 0H5a7 7 0 0014 0h-2zM11 18.93V22h2v-3.07A8.001 8.001 0 0020 11h-2a6 6 0 11-12 0H4a8.001 8.001 0 007 7.93z" />
+              </svg>
+            </button>
+          )}
+
           <textarea
             id="chat-input"
             ref={inputRef}
@@ -107,16 +120,19 @@ export default function ChatBox({
                 handleSubmit(e);
               }
             }}
-            placeholder="Ask about grazing, stocking rates, or bush encroachment…"
+            placeholder={isListening ? "Listening…" : "Type your question…"}
             disabled={isLoading || disabled}
-            className="max-h-32 min-h-[2.75rem] flex-1 resize-none rounded-xl border border-veld-200 bg-white px-3.5 py-2.5 text-sm text-ink outline-none transition placeholder:text-ink-muted/70 focus:border-veld-500 focus:ring-2 focus:ring-veld-200 disabled:opacity-60"
+            className="max-h-28 min-h-[2.75rem] flex-1 resize-none rounded-2xl border-0 bg-mist px-3.5 py-2.5 text-sm text-ink outline-none ring-1 ring-veld-200 focus:ring-2 focus:ring-veld-400 disabled:opacity-60"
           />
           <button
             type="submit"
             disabled={!input.trim() || isLoading || disabled}
-            className="inline-flex h-11 shrink-0 items-center justify-center rounded-xl bg-veld-800 px-4 text-sm font-semibold text-white transition hover:bg-veld-900 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="Send"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-veld-800 text-white active:bg-veld-900 disabled:opacity-40"
           >
-            Send
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M3.4 20.4l17.45-7.48a1 1 0 000-1.84L3.4 3.6a.993.993 0 00-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z" />
+            </svg>
           </button>
         </div>
       </form>

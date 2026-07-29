@@ -2,25 +2,45 @@ export const API_BASE =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
 
 export const NAMIBIA_LOCATIONS = [
-  { name: "Windhoek", lat: -22.57, lon: 17.08 },
-  { name: "Oshakati", lat: -17.78, lon: 15.7 },
-  { name: "Swakopmund", lat: -22.68, lon: 14.53 },
-  { name: "Rundu", lat: -17.93, lon: 19.77 },
-  { name: "Katima Mulilo", lat: -17.5, lon: 24.27 },
-  { name: "Otjiwarongo", lat: -20.46, lon: 16.65 },
-  { name: "Keetmanshoop", lat: -26.58, lon: 18.13 },
-  { name: "Gobabis", lat: -22.45, lon: 18.97 },
-  { name: "Mariental", lat: -24.63, lon: 17.97 },
-  { name: "Outjo", lat: -20.12, lon: 16.15 },
-  { name: "Tsumeb", lat: -19.25, lon: 17.72 },
-  { name: "Grootfontein", lat: -19.57, lon: 18.12 },
-  { name: "Walvis Bay", lat: -22.96, lon: 14.51 },
-  { name: "Okahandja", lat: -21.98, lon: 16.91 },
+  { name: "Windhoek", region: "Khomas", lat: -22.57, lon: 17.08 },
+  { name: "Oshakati", region: "Oshana", lat: -17.78, lon: 15.7 },
+  { name: "Swakopmund", region: "Erongo", lat: -22.68, lon: 14.53 },
+  { name: "Rundu", region: "Kavango East", lat: -17.93, lon: 19.77 },
+  { name: "Katima Mulilo", region: "Zambezi", lat: -17.5, lon: 24.27 },
+  { name: "Otjiwarongo", region: "Otjozondjupa", lat: -20.46, lon: 16.65 },
+  { name: "Keetmanshoop", region: "ǁKaras", lat: -26.58, lon: 18.13 },
+  { name: "Gobabis", region: "Omaheke", lat: -22.45, lon: 18.97 },
+  { name: "Mariental", region: "Hardap", lat: -24.63, lon: 17.97 },
+  { name: "Outjo", region: "Kunene", lat: -20.12, lon: 16.15 },
+  { name: "Tsumeb", region: "Oshikoto", lat: -19.25, lon: 17.72 },
+  { name: "Grootfontein", region: "Otjozondjupa", lat: -19.57, lon: 18.12 },
+  { name: "Walvis Bay", region: "Erongo", lat: -22.96, lon: 14.51 },
+  { name: "Okahandja", region: "Otjozondjupa", lat: -21.98, lon: 16.91 },
+];
+
+export const LAND_TENURE_OPTIONS = [
+  { value: "communal", label: "Communal" },
+  { value: "commercial", label: "Commercial" },
+  { value: "conservancy", label: "Conservancy" },
+  { value: "unknown", label: "Prefer not to say" },
 ];
 
 export const CHAT_SUGGESTIONS = [
-  "Is this camp currently overgrazed?",
-  "What's a safe stocking rate for this area right now?",
-  "Should I move my herd, and if so when?",
-  "How does recent rainfall affect grazing capacity?",
+  "Is this camp overgrazed?",
+  "What's a safe stocking rate right now?",
+  "Should I move my herd?",
 ];
+
+export const DEFAULT_FARM_CONTEXT = {
+  farmerName: "",
+  location: "Windhoek",
+  region: "Khomas",
+  lat: -22.57,
+  lon: 17.08,
+  herdSize: 50,
+  campName: "",
+  landTenure: "communal",
+};
+
+export const FARM_STORAGE_KEY = "farmar-profile";
+

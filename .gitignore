@@ -14,6 +14,11 @@ dist-ssr
 .env
 .env.local
 
+# Capacitor native projects (generated)
+android
+ios
+.capacitor
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

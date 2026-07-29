@@ -4,6 +4,7 @@ import Dashboard from "./pages/Dashboard";
 import Chat from "./pages/Chat";
 import Pasture from "./pages/Pasture";
 import Weather from "./pages/Weather";
+import Profile from "./pages/Profile";
 
 export default function App() {
   return (
@@ -14,6 +15,7 @@ export default function App() {
           <Route path="chat" element={<Chat />} />
           <Route path="pasture" element={<Pasture />} />
           <Route path="weather" element={<Weather />} />
+          <Route path="profile" element={<Profile />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

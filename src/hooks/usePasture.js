@@ -7,7 +7,7 @@ export function usePasture() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const fetchPasture = useCallback(async (location) => {
+  const fetchPasture = useCallback(async (location, extra = {}) => {
     const trimmed = location?.trim();
     if (!trimmed) {
       setError("Please select or enter a location.");
@@ -18,7 +18,7 @@ export function usePasture() {
     setError(null);
 
     try {
-      const result = await getPasture(trimmed);
+      const result = await getPasture(trimmed, extra);
       setData(result);
     } catch (err) {
       setData(null);
