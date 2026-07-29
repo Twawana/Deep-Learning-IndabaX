@@ -25,6 +25,24 @@ export const LAND_TENURE_OPTIONS = [
   { value: "unknown", label: "Prefer not to say" },
 ];
 
+export const LIVESTOCK_OPTIONS = [
+  { value: "cattle", label: "Cattle" },
+  { value: "goats", label: "Goats" },
+  { value: "sheep", label: "Sheep" },
+  { value: "mixed", label: "Mixed herd" },
+  { value: "other", label: "Other" },
+];
+
+export const WATER_SOURCE_OPTIONS = [
+  { value: "borehole", label: "Borehole" },
+  { value: "dam", label: "Dam / pond" },
+  { value: "river", label: "River / stream" },
+  { value: "pipeline", label: "Pipeline / tap" },
+  { value: "rainwater", label: "Rainwater" },
+  { value: "mixed", label: "More than one" },
+  { value: "unknown", label: "Not sure" },
+];
+
 export const CHAT_SUGGESTIONS = [
   "Is this camp overgrazed?",
   "What's a safe stocking rate right now?",
@@ -33,14 +51,23 @@ export const CHAT_SUGGESTIONS = [
 
 export const DEFAULT_FARM_CONTEXT = {
   farmerName: "",
+  farmName: "",
+  phone: "",
   location: "Windhoek",
   region: "Khomas",
+  village: "",
+  customLocation: "",
   lat: -22.57,
   lon: 17.08,
   herdSize: 50,
+  livestockType: "cattle",
   campName: "",
+  numberOfCamps: "",
+  farmSizeHa: "",
   landTenure: "communal",
+  waterSource: "borehole",
+  farmNotes: "",
 };
 
-export const FARM_STORAGE_KEY = "farmar-profile";
+export const FARM_STORAGE_KEY = "farmar-profile-v2";
 

@@ -24,7 +24,8 @@ const SCREENS = {
   },
   "/profile": {
     title: "Profile",
-    hint: (farm) => farm.farmerName || "Your farm details",
+    hint: (farm) =>
+      farm.farmName || farm.farmerName || farm.customLocation || "Your farm details",
   },
 };
 

@@ -19,11 +19,21 @@ Farmer conversational interface. Backend should use an LLM with tool-calling to:
 ```json
 {
   "message": "Is this camp overgrazed given my herd size?",
-  "location": "Otjiwarongo",
+  "farmer_name": "Maria",
+  "farm_name": "Green Valley",
+  "phone": "0812345678",
+  "location": "20km east of Otjiwarongo",
+  "nearest_town": "Otjiwarongo",
   "region": "Otjozondjupa",
+  "village": "Okakarara",
   "herd_size": 80,
+  "livestock_type": "cattle",
   "camp_name": "North camp",
+  "number_of_camps": 4,
+  "farm_size_ha": 2500,
   "land_tenure": "communal",
+  "water_source": "borehole",
+  "farm_notes": "Bush encroachment on south camp",
   "lat": -20.46,
   "lon": 16.65,
   "history": [
