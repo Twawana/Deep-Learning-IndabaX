@@ -17,9 +17,11 @@ export function useChat() {
     userTier,
     isLoggedIn,
     isPremium,
+    isAdmin,
     canAskAsGuest,
     guestAsksRemaining,
     trackAiUsage,
+    appSettings,
   } = useAuth();
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -32,6 +34,13 @@ export function useChat() {
     async (text) => {
       const trimmed = text.trim();
       if (!trimmed || isLoading) return null;
+
+      if (appSettings?.maintenanceMode && !isAdmin) {
+        setError(
+          "Ask is temporarily limited while maintenance mode is on. Try again later."
+        );
+        return null;
+      }
 
       if (!isLoggedIn && !canAskAsGuest) {
         setError(
@@ -100,6 +109,7 @@ export function useChat() {
           recommendations: data.recommendations || [],
           tools_used: data.tools_used || [],
           sources: data.sources || null,
+          decision: data.decision || null,
           limitations: data.limitations || "",
           user_tier: data.user_tier || effectiveTier,
           timestamp: new Date().toISOString(),
@@ -127,8 +137,10 @@ export function useChat() {
       userTier,
       isLoggedIn,
       isPremium,
+      isAdmin,
       canAskAsGuest,
       trackAiUsage,
+      appSettings?.maintenanceMode,
     ]
   );
 

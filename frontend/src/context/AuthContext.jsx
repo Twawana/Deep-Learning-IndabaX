@@ -9,6 +9,7 @@ import {
   patchUser,
   recordAiUsage,
   registerAccount,
+  setSessionToken,
   upgradeSubscription,
 } from "../services/api";
 
@@ -97,13 +98,17 @@ export function AuthProvider({ children }) {
   };
 
   const applyRemoteState = (data) => {
+    if (data?.session_token) {
+      setSessionToken(data.session_token);
+    }
     const users = (data?.users || []).map(mapUser);
     const remoteCurrent = mapUser(data?.current_user || GUEST_USER);
+    const loggedIn = Boolean(data?.is_logged_in) && remoteCurrent.id !== "guest";
     updateState((prev) => ({
       ...prev,
       currentUser: remoteCurrent,
-      isLoggedIn: Boolean(data?.is_logged_in),
-      users,
+      isLoggedIn: loggedIn,
+      users: remoteCurrent.role === "admin" ? users : [],
       appSettings: {
         maintenanceMode: Boolean(data?.app_settings?.maintenance_mode),
         allowDataSync:
@@ -156,7 +161,17 @@ export function AuthProvider({ children }) {
   };
 
   const logout = async () => {
-    return withBackendState(() => logoutAccount());
+    const result = await withBackendState(() => logoutAccount());
+    setSessionToken("");
+    updateState((prev) => ({
+      ...prev,
+      currentUser: GUEST_USER,
+      isLoggedIn: false,
+      source: result.ok ? "backend" : prev.source,
+    }));
+    return result.ok
+      ? result
+      : { ok: true, message: "Logged out on this device." };
   };
 
   const upgradePlan = async (tier = "premium") => {

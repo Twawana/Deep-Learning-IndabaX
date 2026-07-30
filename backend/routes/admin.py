@@ -1,15 +1,20 @@
 """
 Admin and auth routes for frontend account management.
+
+Uses per-browser session tokens (X-Session-Token) so multiple clients
+can stay logged in independently. Global current_user_id is no longer used
+as the source of truth for "who is logged in".
 """
 
 from __future__ import annotations
 
 import json
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -45,7 +50,8 @@ DEFAULT_USERS = [
 ]
 
 DEFAULT_STATE = {
-    "current_user_id": None,
+    "current_user_id": None,  # legacy; kept for file compatibility
+    "sessions": {},  # token -> user_id
     "users": DEFAULT_USERS,
     "app_settings": {"maintenance_mode": False, "allow_data_sync": True},
 }
@@ -119,11 +125,11 @@ def _public_user(user: dict[str, Any]) -> dict[str, Any]:
 
 def _load_state() -> dict[str, Any]:
     if not STATE_PATH.exists():
-        return DEFAULT_STATE
+        return dict(DEFAULT_STATE)
     try:
         return json.loads(STATE_PATH.read_text(encoding="utf-8"))
     except Exception:
-        return DEFAULT_STATE
+        return dict(DEFAULT_STATE)
 
 
 def _save_state(state: dict[str, Any]) -> dict[str, Any]:
@@ -154,11 +160,17 @@ def _normalize_user(user: dict[str, Any]) -> dict[str, Any]:
 
 def _normalize_state(raw: dict[str, Any]) -> dict[str, Any]:
     users = [_normalize_user(user) for user in (raw.get("users") or DEFAULT_USERS)]
-    current_id = raw.get("current_user_id")
-    if current_id and not any(user.get("id") == current_id for user in users):
-        current_id = None
+    sessions = {
+        str(token): str(uid)
+        for token, uid in (raw.get("sessions") or {}).items()
+        if token and uid
+    }
+    # Drop sessions pointing at missing users
+    valid_ids = {u["id"] for u in users}
+    sessions = {t: uid for t, uid in sessions.items() if uid in valid_ids}
     return {
-        "current_user_id": current_id,
+        "current_user_id": None,
+        "sessions": sessions,
         "users": users,
         "app_settings": {
             **DEFAULT_STATE["app_settings"],
@@ -167,20 +179,61 @@ def _normalize_state(raw: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _state_response(state: dict[str, Any], message: str | None = None) -> dict[str, Any]:
-    current_raw = next(
-        (u for u in state["users"] if u["id"] == state.get("current_user_id")),
-        None,
-    )
+def _user_for_token(state: dict[str, Any], token: Optional[str]) -> dict[str, Any] | None:
+    if not token:
+        return None
+    user_id = (state.get("sessions") or {}).get(token)
+    if not user_id:
+        return None
+    return next((u for u in state["users"] if u["id"] == user_id), None)
+
+
+def _issue_session(state: dict[str, Any], user_id: str) -> str:
+    token = secrets.token_urlsafe(24)
+    sessions = dict(state.get("sessions") or {})
+    sessions[token] = user_id
+    # Cap sessions per user to avoid unbounded growth
+    owned = [t for t, uid in sessions.items() if uid == user_id]
+    if len(owned) > 8:
+        for old in owned[:-8]:
+            sessions.pop(old, None)
+    state["sessions"] = sessions
+    return token
+
+
+def _state_response(
+    state: dict[str, Any],
+    *,
+    message: str | None = None,
+    session_token: str | None = None,
+    current_user: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    current_raw = current_user
     current = _public_user(current_raw) if current_raw else GUEST_USER
-    return {
+    is_admin = current.get("role") == "admin"
+    payload = {
         "current_user": current,
         "is_logged_in": current_raw is not None,
-        "is_admin": current.get("role") == "admin",
-        "users": [_public_user(user) for user in state["users"]],
+        "is_admin": is_admin,
+        "users": [_public_user(user) for user in state["users"]] if is_admin else [],
         "app_settings": state["app_settings"],
         "message": message,
     }
+    if session_token:
+        payload["session_token"] = session_token
+    return payload
+
+
+def _require_user(
+    state: dict[str, Any],
+    x_session_token: Optional[str],
+) -> dict[str, Any]:
+    user = _user_for_token(state, x_session_token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Please log in first.")
+    if user.get("status") != "active":
+        raise HTTPException(status_code=400, detail="This account is disabled.")
+    return user
 
 
 def _find_user(state: dict[str, Any], identifier: str) -> dict[str, Any] | None:
@@ -191,10 +244,13 @@ def _find_user(state: dict[str, Any], identifier: str) -> dict[str, Any] | None:
     return None
 
 
-@router.get("/state", summary="Fetch auth/admin state")
-def admin_state() -> dict[str, Any]:
+@router.get("/state", summary="Fetch auth/admin state for this browser session")
+def admin_state(
+    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
+) -> dict[str, Any]:
     state = _normalize_state(_load_state())
-    return _state_response(state)
+    user = _user_for_token(state, x_session_token)
+    return _state_response(state, current_user=user)
 
 
 @router.post("/login", summary="Login with email/username and password")
@@ -206,9 +262,14 @@ def login(body: CredentialLoginBody) -> dict[str, Any]:
     if user.get("status") != "active":
         raise HTTPException(status_code=400, detail="This account is disabled.")
     user["last_login"] = _now()
-    state["current_user_id"] = user["id"]
+    token = _issue_session(state, user["id"])
     state = _save_state(state)
-    return _state_response(state, f"Logged in as {user['name']}.")
+    return _state_response(
+        state,
+        message=f"Logged in as {user['name']}.",
+        session_token=token,
+        current_user=user,
+    )
 
 
 @router.post("/register", summary="Create a new free account")
@@ -219,10 +280,12 @@ def register(body: RegisterBody) -> dict[str, Any]:
     name = body.name.strip()
     password = body.password
 
-    if "@" not in email:
+    if "@" not in email or "." not in email.split("@")[-1]:
         raise HTTPException(status_code=400, detail="Please enter a valid email address.")
     if len(password) < 4:
         raise HTTPException(status_code=400, detail="Password must be at least 4 characters.")
+    if len(name) < 2:
+        raise HTTPException(status_code=400, detail="Please enter your name.")
     if _find_user(state, email) or _find_user(state, username):
         raise HTTPException(status_code=400, detail="Email or username already exists.")
 
@@ -245,56 +308,75 @@ def register(body: RegisterBody) -> dict[str, Any]:
         "last_login": _now(),
     }
     state["users"].append(new_user)
-    state["current_user_id"] = user_id
+    token = _issue_session(state, user_id)
     state = _save_state(state)
-    return _state_response(state, f"Account created. Welcome, {name}!")
+    return _state_response(
+        state,
+        message=f"Account created. Welcome, {name}!",
+        session_token=token,
+        current_user=new_user,
+    )
 
 
-@router.post("/logout", summary="Logout")
-def logout_user() -> dict[str, Any]:
+@router.post("/logout", summary="Logout this browser session")
+def logout_user(
+    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
+) -> dict[str, Any]:
     state = _normalize_state(_load_state())
-    state["current_user_id"] = None
-    state = _save_state(state)
-    return _state_response(state, "Logged out.")
+    if x_session_token and x_session_token in (state.get("sessions") or {}):
+        state["sessions"].pop(x_session_token, None)
+        state = _save_state(state)
+    return _state_response(state, message="Logged out.", current_user=None)
 
 
 @router.post("/upgrade", summary="Upgrade or change subscription for current user")
-def upgrade_subscription(body: UpgradeBody) -> dict[str, Any]:
+def upgrade_subscription(
+    body: UpgradeBody,
+    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
+) -> dict[str, Any]:
     state = _normalize_state(_load_state())
-    current_id = state.get("current_user_id")
-    if not current_id:
-        raise HTTPException(status_code=401, detail="Please log in to manage your subscription.")
-    updated = False
+    current = _require_user(state, x_session_token)
     for user in state["users"]:
-        if user["id"] != current_id:
+        if user["id"] != current["id"]:
             continue
         user["tier"] = body.tier
-        updated = True
+        current = user
         break
-    if not updated:
-        raise HTTPException(status_code=404, detail="User not found.")
     state = _save_state(state)
     label = "Premium" if body.tier == "premium" else "Free"
-    return _state_response(state, f"Subscription updated to {label}.")
+    return _state_response(
+        state,
+        message=f"Subscription updated to {label}.",
+        current_user=current,
+    )
 
 
 @router.post("/ai-usage", summary="Record one AI Ask usage for current user")
-def record_ai_usage() -> dict[str, Any]:
+def record_ai_usage(
+    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
+) -> dict[str, Any]:
     state = _normalize_state(_load_state())
-    current_id = state.get("current_user_id")
-    if not current_id:
-        return _state_response(state, "Guest usage not tracked.")
+    current = _user_for_token(state, x_session_token)
+    if not current:
+        return _state_response(state, message="Guest usage not tracked.", current_user=None)
     for user in state["users"]:
-        if user["id"] == current_id:
+        if user["id"] == current["id"]:
             user["ai_usage"] = int(user.get("ai_usage") or 0) + 1
+            current = user
             break
     state = _save_state(state)
-    return _state_response(state, "AI usage recorded.")
+    return _state_response(state, message="AI usage recorded.", current_user=current)
 
 
 @router.post("/users", summary="Add user")
-def add_user(body: AddUserBody) -> dict[str, Any]:
+def add_user(
+    body: AddUserBody,
+    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
+) -> dict[str, Any]:
     state = _normalize_state(_load_state())
+    actor = _require_user(state, x_session_token)
+    if actor.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
     clean = body.name.strip()
     email = (body.email or f"{clean.lower().replace(' ', '.')}@farmar.local").strip().lower()
     username = (body.username or email.split("@")[0]).strip().lower()
@@ -321,12 +403,19 @@ def add_user(body: AddUserBody) -> dict[str, Any]:
         }
     )
     state = _save_state(state)
-    return _state_response(state, f"{clean} added.")
+    return _state_response(state, message=f"{clean} added.", current_user=actor)
 
 
 @router.patch("/users/{user_id}", summary="Update user")
-def update_user(user_id: str, body: UpdateUserBody) -> dict[str, Any]:
+def update_user(
+    user_id: str,
+    body: UpdateUserBody,
+    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
+) -> dict[str, Any]:
     state = _normalize_state(_load_state())
+    actor = _require_user(state, x_session_token)
+    if actor.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
     updated = False
     for user in state["users"]:
         if user["id"] != user_id:
@@ -342,30 +431,43 @@ def update_user(user_id: str, body: UpdateUserBody) -> dict[str, Any]:
     if not updated:
         raise HTTPException(status_code=404, detail="User not found.")
     state = _save_state(state)
-    return _state_response(state, "User updated.")
+    return _state_response(state, message="User updated.", current_user=actor)
 
 
 @router.delete("/users/{user_id}", summary="Remove user")
-def delete_user(user_id: str) -> dict[str, Any]:
+def delete_user(
+    user_id: str,
+    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
+) -> dict[str, Any]:
     if user_id == "admin-main":
         raise HTTPException(status_code=400, detail="Default admin cannot be removed.")
     state = _normalize_state(_load_state())
+    actor = _require_user(state, x_session_token)
+    if actor.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
     users = [user for user in state["users"] if user["id"] != user_id]
     if len(users) == len(state["users"]):
         raise HTTPException(status_code=404, detail="User not found.")
     state["users"] = users
-    if state.get("current_user_id") == user_id:
-        state["current_user_id"] = None
+    state["sessions"] = {
+        t: uid for t, uid in (state.get("sessions") or {}).items() if uid != user_id
+    }
     state = _save_state(state)
-    return _state_response(state, "User removed.")
+    return _state_response(state, message="User removed.", current_user=actor)
 
 
 @router.patch("/settings", summary="Update app settings")
-def update_settings(body: UpdateSettingsBody) -> dict[str, Any]:
+def update_settings(
+    body: UpdateSettingsBody,
+    x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
+) -> dict[str, Any]:
     state = _normalize_state(_load_state())
+    actor = _require_user(state, x_session_token)
+    if actor.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
     if body.maintenance_mode is not None:
         state["app_settings"]["maintenance_mode"] = body.maintenance_mode
     if body.allow_data_sync is not None:
         state["app_settings"]["allow_data_sync"] = body.allow_data_sync
     state = _save_state(state)
-    return _state_response(state, "Settings updated.")
+    return _state_response(state, message="Settings updated.", current_user=actor)

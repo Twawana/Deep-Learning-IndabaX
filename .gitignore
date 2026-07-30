@@ -30,6 +30,12 @@ backend/data/raw/**
 backend/data/processed/advisory_dataset.json
 backend/data/processed/dataset_inspection_report.json
 
+# Local auth/admin runtime state (passwords + session tokens)
+backend/data/admin_state.json
+
+# Accidental recovery dumps
+frontend_broken_*/
+
 # Frontend
 frontend/node_modules/
 frontend/dist/

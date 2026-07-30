@@ -113,11 +113,13 @@ export default function AdminPanel() {
         <div className="space-y-3">
           <ToggleRow
             label="Maintenance mode"
+            hint="Blocks Ask for non-admins. Shows a banner across the app."
             value={appSettings.maintenanceMode}
             onChange={(next) => handleSettingsToggle({ maintenanceMode: next })}
           />
           <ToggleRow
             label="Allow data sync"
+            hint="When off, farm profile still saves locally; remote admin sync stays available."
             value={appSettings.allowDataSync}
             onChange={(next) => handleSettingsToggle({ allowDataSync: next })}
           />
@@ -249,16 +251,23 @@ function StatTile({ label, value }) {
   );
 }
 
-function ToggleRow({ label, value, onChange }) {
+function ToggleRow({ label, hint, value, onChange }) {
   return (
     <button
       type="button"
       onClick={() => onChange(!value)}
-      className="flex w-full items-center justify-between rounded-xl border border-veld-100 bg-mist px-3 py-2.5 text-left"
+      className="flex w-full items-center justify-between gap-3 rounded-xl border border-veld-100 bg-mist px-3 py-2.5 text-left"
     >
-      <span className="text-sm font-medium text-ink">{label}</span>
+      <span className="min-w-0">
+        <span className="block text-sm font-medium text-ink">{label}</span>
+        {hint ? (
+          <span className="mt-0.5 block text-[11px] leading-snug text-ink-muted">
+            {hint}
+          </span>
+        ) : null}
+      </span>
       <span
-        className={`rounded-full px-2 py-1 text-xs font-semibold ${
+        className={`shrink-0 rounded-full px-2 py-1 text-xs font-semibold ${
           value ? "bg-veld-100 text-veld-800" : "bg-white text-ink-muted"
         }`}
       >

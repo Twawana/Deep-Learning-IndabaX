@@ -147,7 +147,7 @@ export default function Profile() {
     setAuthMessage(result.message);
     if (result.ok) {
       setRegisterPassword("");
-      setAuthMode("login");
+      setAuthMessage(result.message || "Account created — you are logged in.");
     }
     setAuthBusy(false);
   };
@@ -274,6 +274,13 @@ export default function Profile() {
                   <p className="text-sm text-ink-muted">
                     Log in to unlock full details, unlimited Ask, and Premium AI.
                   </p>
+                  <div className="rounded-xl border border-dashed border-veld-200 bg-mist/80 px-3 py-2 text-[11px] leading-relaxed text-ink-muted">
+                    Demo: <span className="font-semibold text-veld-800">farmer</span> /{" "}
+                    <span className="font-semibold text-veld-800">farmer123</span>
+                    {" · "}
+                    Admin: <span className="font-semibold text-veld-800">admin</span> /{" "}
+                    <span className="font-semibold text-veld-800">admin123</span>
+                  </div>
                   <Field label="Email or username" htmlFor="login-identifier">
                     <input
                       id="login-identifier"
@@ -301,7 +308,7 @@ export default function Profile() {
                   <button
                     type="submit"
                     disabled={authBusy}
-                    className="w-full rounded-xl bg-veld-800 py-2.5 text-sm font-semibold text-white"
+                    className="w-full rounded-xl bg-veld-800 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
                   >
                     {authBusy ? "Signing in..." : "Log in"}
                   </button>
@@ -381,7 +388,16 @@ export default function Profile() {
           ) : null}
 
           {authMessage ? (
-            <p className="text-xs font-medium text-veld-700">{authMessage}</p>
+            <p
+              className={`rounded-xl px-3 py-2 text-xs font-medium ${
+                /fail|invalid|error|required|already|please/i.test(authMessage) &&
+                !/welcome|logged in|created|upgraded|switched/i.test(authMessage)
+                  ? "bg-red-50 text-red-800"
+                  : "bg-veld-50 text-veld-800"
+              }`}
+            >
+              {authMessage}
+            </p>
           ) : null}
         </div>
       </Card>
@@ -390,21 +406,36 @@ export default function Profile() {
         <div className="space-y-3">
           <div className="rounded-xl border border-veld-100 bg-mist px-3 py-2.5">
             <p className="text-sm font-semibold text-ink">
-              Current plan: {isPremium ? "Premium" : "Free"}
+              Current plan:{" "}
+              {!isLoggedIn ? "Guest (basic)" : isPremium ? "Premium" : "Free"}
             </p>
             <p className="mt-1 text-xs text-ink-muted">
-              {isPremium
-                ? "Full grazing insights, rainfall analysis, and stocking recommendations."
-                : "Short basic answers only. Upgrade for detailed AI grazing advice."}
+              {!isLoggedIn
+                ? "Log in for unlimited short Ask. Upgrade to Premium for detailed grazing advice."
+                : isPremium
+                  ? "Full grazing insights, rainfall analysis, and stocking recommendations."
+                  : "Short basic answers only. Upgrade for detailed AI grazing advice."}
             </p>
           </div>
 
-          {!isPremium ? (
+          {!isLoggedIn ? (
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode("login");
+                setAuthMessage("Log in first, then you can upgrade to Premium.");
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+              className="w-full rounded-xl border border-veld-200 bg-white py-3 text-sm font-semibold text-veld-800"
+            >
+              Log in to upgrade
+            </button>
+          ) : !isPremium ? (
             <button
               type="button"
               onClick={handleUpgrade}
               disabled={authBusy}
-              className="w-full rounded-xl bg-veld-800 py-3 text-sm font-semibold text-white"
+              className="w-full rounded-xl bg-veld-800 py-3 text-sm font-semibold text-white disabled:opacity-60"
             >
               Upgrade to Premium
             </button>
@@ -413,17 +444,11 @@ export default function Profile() {
               type="button"
               onClick={handleDowngrade}
               disabled={authBusy}
-              className="w-full rounded-xl border border-veld-200 bg-white py-2.5 text-sm font-semibold text-veld-800"
+              className="w-full rounded-xl border border-veld-200 bg-white py-2.5 text-sm font-semibold text-veld-800 disabled:opacity-60"
             >
               Switch back to Free
             </button>
           )}
-
-          {!isLoggedIn ? (
-            <p className="text-[11px] text-ink-muted">
-              Guests stay on basic answers. Log in first, then upgrade for Premium AI.
-            </p>
-          ) : null}
 
           <ul className="space-y-1 text-xs text-ink-muted">
             <li>• Guest: browse basics + limited Ask</li>

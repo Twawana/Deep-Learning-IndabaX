@@ -293,15 +293,44 @@ def row_to_dict(row: pd.Series) -> dict[str, Any]:
     return data
 
 
-def list_sites() -> list[dict[str, str]]:
+def list_sites() -> list[dict[str, Any]]:
     df = load_advisory_dataframe()
-    cols = [c for c in ["site", "site_code", "region"] if c in df.columns]
-    return (
-        df[cols]
-        .drop_duplicates()
-        .sort_values("site")
-        .to_dict(orient="records")
-    )
+    latest = latest_per_plot(df)
+    rows: list[dict[str, Any]] = []
+    for site, group in latest.groupby("site"):
+        if site is None or str(site).lower() in {"none", "nan"}:
+            continue
+        lat = pd.to_numeric(group["latitude"], errors="coerce").mean() if "latitude" in group.columns else None
+        lon = pd.to_numeric(group["longitude"], errors="coerce").mean() if "longitude" in group.columns else None
+        cover = (
+            pd.to_numeric(group["vegetation_cover"], errors="coerce").mean()
+            if "vegetation_cover" in group.columns
+            else None
+        )
+        biomass = (
+            pd.to_numeric(group["biomass"], errors="coerce").mean()
+            if "biomass" in group.columns
+            else None
+        )
+        region = None
+        if "region" in group.columns and group["region"].notna().any():
+            region = str(group["region"].dropna().iloc[0])
+        code = None
+        if "site_code" in group.columns and group["site_code"].notna().any():
+            code = str(group["site_code"].dropna().iloc[0])
+        rows.append(
+            {
+                "site": str(site),
+                "site_code": code,
+                "region": region,
+                "latitude": None if pd.isna(lat) else round(float(lat), 5),
+                "longitude": None if pd.isna(lon) else round(float(lon), 5),
+                "vegetation_cover": None if cover is None or pd.isna(cover) else round(float(cover), 2),
+                "biomass": None if biomass is None or pd.isna(biomass) else round(float(biomass), 2),
+            }
+        )
+    rows.sort(key=lambda r: r["site"])
+    return rows
 
 
 def list_supported_place_aliases() -> list[dict[str, str]]:

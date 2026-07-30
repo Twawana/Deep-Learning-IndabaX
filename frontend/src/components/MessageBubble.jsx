@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { toArray } from "../utils/format";
+import { priorityStyle } from "./decision/priorityStyles";
 
 export default function MessageBubble({ message, onSpeak, isSpeaking }) {
   const isUser = message.role === "user";
@@ -12,7 +13,11 @@ export default function MessageBubble({ message, onSpeak, isSpeaking }) {
           .map((s) => s.trim())
           .filter(Boolean)
       : toArray(message.limitations);
+  const decision = message.decision;
   const [showWhy, setShowWhy] = useState(false);
+  const [showEvidence, setShowEvidence] = useState(false);
+
+  const style = priorityStyle(decision?.action_priority || "monitor");
 
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
@@ -38,6 +43,12 @@ export default function MessageBubble({ message, onSpeak, isSpeaking }) {
           </div>
         )}
 
+        {!isUser && decision?.headline && (
+          <p className={`mb-2 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${style.badge}`}>
+            {style.emoji} {decision.headline}
+          </p>
+        )}
+
         <p className="whitespace-pre-wrap text-sm leading-relaxed">
           {message.content}
         </p>
@@ -56,9 +67,36 @@ export default function MessageBubble({ message, onSpeak, isSpeaking }) {
           </ul>
         )}
 
+        {!isUser && decision?.explainer?.checks?.length > 0 && (
+          <div className="mt-2.5 border-t border-veld-100 pt-2">
+            <p className="text-[11px] font-semibold text-veld-800">
+              Why this recommendation?
+            </p>
+            <ul className="mt-1.5 space-y-1">
+              {decision.explainer.checks.map((check) => (
+                <li key={check.id} className="text-[11px] text-ink-muted">
+                  {check.done ? "✓" : "○"} {check.label}
+                </li>
+              ))}
+            </ul>
+            {(decision.explainer.why || []).length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {decision.explainer.why.slice(0, 3).map((item) => (
+                  <li key={item} className="text-[11px] leading-relaxed text-ink-muted">
+                    • {item}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
         {!isUser && toolsUsed.length > 0 && message.user_tier !== "free" && (
           <p className="mt-2 text-[11px] text-ink-muted">
-            Tools: {toolsUsed.map((t) => (typeof t === "string" ? t : t?.name || String(t))).join(", ")}
+            Tools:{" "}
+            {toolsUsed
+              .map((t) => (typeof t === "string" ? t : t?.name || String(t)))
+              .join(", ")}
           </p>
         )}
 
@@ -75,21 +113,39 @@ export default function MessageBubble({ message, onSpeak, isSpeaking }) {
           </ul>
         )}
 
-        {!isUser && message.reasoning && message.user_tier !== "free" && (
-          <div className="mt-2">
-            <button
-              type="button"
-              onClick={() => setShowWhy((v) => !v)}
-              className="text-[11px] font-semibold text-veld-600"
-            >
-              {showWhy ? "Hide" : "Why?"}
-            </button>
-            {showWhy && (
-              <p className="mt-1.5 whitespace-pre-wrap text-xs leading-relaxed text-ink-muted">
-                {message.reasoning}
-              </p>
+        {!isUser && (message.reasoning || message.sources) && message.user_tier !== "free" && (
+          <div className="mt-2 flex flex-wrap gap-3">
+            {message.reasoning && (
+              <button
+                type="button"
+                onClick={() => setShowWhy((v) => !v)}
+                className="text-[11px] font-semibold text-veld-600"
+              >
+                {showWhy ? "Hide reasoning" : "View reasoning"}
+              </button>
+            )}
+            {message.sources && (
+              <button
+                type="button"
+                onClick={() => setShowEvidence((v) => !v)}
+                className="text-[11px] font-semibold text-veld-600"
+              >
+                {showEvidence ? "Hide evidence" : "View evidence"}
+              </button>
             )}
           </div>
+        )}
+
+        {!isUser && showWhy && message.reasoning && (
+          <p className="mt-1.5 whitespace-pre-wrap text-xs leading-relaxed text-ink-muted">
+            {message.reasoning}
+          </p>
+        )}
+
+        {!isUser && showEvidence && message.sources && (
+          <pre className="mt-1.5 max-h-40 overflow-auto rounded-lg bg-mist p-2 text-[10px] text-ink-muted">
+            {JSON.stringify(message.sources, null, 2)}
+          </pre>
         )}
       </div>
     </div>

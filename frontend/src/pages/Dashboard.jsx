@@ -3,55 +3,17 @@ import Card from "../components/Card";
 import ErrorAlert from "../components/ErrorAlert";
 import GuestBanner from "../components/GuestBanner";
 import Loader from "../components/Loader";
+import ActionPriorityBanner from "../components/decision/ActionPriorityBanner";
+import GrazingConditionsCard from "../components/decision/GrazingConditionsCard";
+import RainfallImpactCard from "../components/decision/RainfallImpactCard";
+import PastureHealthCard from "../components/decision/PastureHealthCard";
+import DecisionTimeline from "../components/decision/DecisionTimeline";
+import RecommendationExplainer from "../components/decision/RecommendationExplainer";
 import { useDashboard } from "../hooks/useDashboard";
 import { useFarmContext } from "../context/FarmContext";
 import { useAuth } from "../context/AuthContext";
-import { formatLabel, formatValue, toArray } from "../utils/format";
+import { formatValue, toArray } from "../utils/format";
 import { NAMIBIA_LOCATIONS } from "../utils/constants";
-
-const WEATHER_KEYS = [
-  "temperature",
-  "rainfall",
-  "rainfall_last_7_days",
-  "forecast_total_mm",
-  "source",
-];
-const PASTURE_KEYS = [
-  "vegetation_cover",
-  "bush_encroachment",
-  "biomass",
-  "grazing_pressure",
-  "observation_date",
-  "confidence",
-];
-
-function pickEntries(data, keys) {
-  if (!data || typeof data !== "object") return [];
-  const preferred = keys
-    .filter((k) => data[k] != null && data[k] !== "")
-    .map((k) => [k, data[k]]);
-  if (preferred.length) return preferred;
-  return Object.entries(data).slice(0, 4);
-}
-
-function SimpleMetrics({ data, keys }) {
-  const entries = pickEntries(data, keys);
-  if (!entries.length) {
-    return <p className="text-sm text-ink-muted">No data yet</p>;
-  }
-  return (
-    <dl className="space-y-2.5">
-      {entries.map(([key, value]) => (
-        <div key={key} className="flex justify-between gap-3">
-          <dt className="text-sm text-ink-muted">{formatLabel(key)}</dt>
-          <dd className="text-sm font-semibold text-veld-900">
-            {formatValue(value)}
-          </dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
 
 function SimpleList({ items, empty }) {
   const list = toArray(items);
@@ -71,6 +33,7 @@ export default function Dashboard() {
   const farm = useFarmContext();
   const { isLoggedIn } = useAuth();
   const { data, isLoading, error, refetch, isFetching } = useDashboard();
+  const decision = data?.decision;
 
   return (
     <div className="space-y-4">
@@ -100,25 +63,64 @@ export default function Dashboard() {
         </button>
       </div>
 
+      <div className="grid grid-cols-2 gap-2">
+        <Link
+          to="/chat"
+          className="flex items-center justify-center rounded-xl bg-veld-800 py-3 text-sm font-semibold text-white active:bg-veld-900"
+        >
+          Ask advisor
+        </Link>
+        <Link
+          to="/scenarios"
+          className="flex items-center justify-center rounded-xl border border-veld-200 bg-white py-3 text-sm font-semibold text-veld-800"
+        >
+          Scenario planner
+        </Link>
+      </div>
       <Link
-        to="/chat"
-        className="flex w-full items-center justify-center rounded-xl bg-veld-800 py-3.5 text-sm font-semibold text-white active:bg-veld-900"
+        to="/compare"
+        className="flex w-full items-center justify-center rounded-xl border border-veld-200 bg-white py-2.5 text-sm font-semibold text-veld-800"
       >
-        Ask for advice
+        Compare camps
       </Link>
 
       {error && <ErrorAlert message={error} />}
 
       {isLoading ? (
-        <Loader label="Loading…" />
+        <Loader label="Loading grazing advice…" />
       ) : data ? (
         <div className="space-y-3">
-          <Card title="Weather">
-            <SimpleMetrics data={data.weather} keys={WEATHER_KEYS.slice(0, isLoggedIn ? WEATHER_KEYS.length : 3)} />
-          </Card>
-          <Card title="Pasture">
-            <SimpleMetrics data={data.pasture_status} keys={PASTURE_KEYS.slice(0, isLoggedIn ? PASTURE_KEYS.length : 3)} />
-          </Card>
+          {decision && <ActionPriorityBanner decision={decision} />}
+          {decision && <GrazingConditionsCard decision={decision} />}
+          {isLoggedIn && decision && <DecisionTimeline decision={decision} />}
+          {decision ? (
+            <PastureHealthCard decision={decision} pasture={data.pasture_status} />
+          ) : (
+            <Card title="Pasture">
+              <p className="text-sm text-ink-muted">
+                {data.pasture_status?.message || "No pasture decision yet."}
+              </p>
+            </Card>
+          )}
+          {decision ? (
+            <RainfallImpactCard decision={decision} weather={data.weather} />
+          ) : (
+            <Card title="Rainfall & Grass Recovery">
+              <p className="text-sm text-ink-muted">
+                {data.weather?.message || "No rainfall outlook yet."}
+              </p>
+            </Card>
+          )}
+          {isLoggedIn && decision && (
+            <RecommendationExplainer
+              decision={decision}
+              sources={{
+                pasture: data.pasture_status,
+                weather: data.weather,
+                grazing_assessment: data.grazing_assessment,
+              }}
+            />
+          )}
           {isLoggedIn && toArray(data.alerts).length > 0 && (
             <Card title="Alerts">
               <SimpleList items={data.alerts} empty="" />
@@ -131,7 +133,7 @@ export default function Dashboard() {
           )}
           {!isLoggedIn ? (
             <p className="text-center text-xs text-ink-muted">
-              Log in to see alerts, tips, and full metric details.
+              Log in to see the full timeline, evidence panel, alerts, and tips.
             </p>
           ) : null}
         </div>

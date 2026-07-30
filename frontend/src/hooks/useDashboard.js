@@ -24,6 +24,7 @@ export function useDashboard() {
       farm.lon,
       herdSize,
       farm.livestockType,
+      farm.landTenure,
     ],
     enabled: Boolean(location),
     queryFn: () =>
@@ -35,6 +36,7 @@ export function useDashboard() {
         lon: farm.lon,
         herd_size: herdSize,
         livestock_type: farm.livestockType || "cattle",
+        land_tenure: farm.landTenure,
       }),
   });
 

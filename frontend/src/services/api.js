@@ -7,10 +7,44 @@
 import axios from "axios";
 import { API_BASE } from "../utils/constants";
 
+const SESSION_KEY = "farmar-session-token-v1";
+
+export function getSessionToken() {
+  try {
+    return localStorage.getItem(SESSION_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function setSessionToken(token) {
+  try {
+    if (token) localStorage.setItem(SESSION_KEY, token);
+    else localStorage.removeItem(SESSION_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 const api = axios.create({
   baseURL: API_BASE,
   headers: { "Content-Type": "application/json" },
   timeout: 60000,
+});
+
+api.interceptors.request.use((config) => {
+  const token = getSessionToken();
+  if (token) {
+    config.headers = config.headers || {};
+    config.headers["X-Session-Token"] = token;
+  }
+  return config;
+});
+
+api.interceptors.response.use((response) => {
+  const token = response?.data?.session_token;
+  if (token) setSessionToken(token);
+  return response;
 });
 
 function encodeRegion(location) {
@@ -179,6 +213,29 @@ export async function getAdvisorContext(payload) {
   return data;
 }
 
+/**
+ * POST /scenarios — what-if grazing decision planner
+ */
+export async function runScenario(payload) {
+  const { data } = await api.post("/scenarios", payload);
+  return data;
+}
+
+/**
+ * GET /compare?location_a=&location_b=
+ */
+export async function compareLocations(locationA, locationB, extra = {}) {
+  const { data } = await api.get("/compare", {
+    params: {
+      location_a: locationA,
+      location_b: locationB,
+      land_tenure: extra.land_tenure,
+      herd_size: extra.herd_size,
+    },
+  });
+  return data;
+}
+
 export async function getAdminState() {
   const { data } = await api.get("/admin/state");
   return data;
@@ -200,8 +257,14 @@ export async function registerAccount({ name, email, username, password }) {
 }
 
 export async function logoutAccount() {
-  const { data } = await api.post("/admin/logout");
-  return data;
+  try {
+    const { data } = await api.post("/admin/logout");
+    setSessionToken("");
+    return data;
+  } catch (error) {
+    setSessionToken("");
+    throw error;
+  }
 }
 
 export async function upgradeSubscription(tier = "premium") {

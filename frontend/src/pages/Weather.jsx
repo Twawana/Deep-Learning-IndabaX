@@ -1,26 +1,19 @@
-import Card from "../components/Card";
+import { useEffect } from "react";
 import ErrorAlert from "../components/ErrorAlert";
 import GuestBanner from "../components/GuestBanner";
 import Loader from "../components/Loader";
+import RainfallImpactCard from "../components/decision/RainfallImpactCard";
 import { useFarmContext } from "../context/FarmContext";
 import { useAuth } from "../context/AuthContext";
 import { useWeather } from "../hooks/useWeather";
+import { useDashboard } from "../hooks/useDashboard";
 import { NAMIBIA_LOCATIONS, datasetLocation } from "../utils/constants";
-import { formatValue, toArray } from "../utils/format";
-
-const KEYS = [
-  { key: "temperature", label: "Temperature" },
-  { key: "rainfall", label: "Near-term rain" },
-  { key: "rainfall_last_7_days", label: "Recent rain total" },
-  { key: "forecast_total_mm", label: "Forecast rain total" },
-  { key: "source", label: "Source" },
-  { key: "confidence", label: "Confidence" },
-];
 
 export default function Weather() {
   const farm = useFarmContext();
   const { isLoggedIn } = useAuth();
   const { data, isLoading, error, fetchWeather, setError } = useWeather();
+  const { data: dash } = useDashboard();
 
   const handleSubmit = (event) => {
     event.preventDefault();
@@ -36,17 +29,22 @@ export default function Weather() {
     });
   };
 
-  const rows = data
-    ? KEYS.filter(({ key }) => data[key] != null && data[key] !== "")
-    : [];
-  const visibleRows = isLoggedIn ? rows : rows.slice(0, 3);
+  // Auto-load once for current farm location
+  useEffect(() => {
+    const location = datasetLocation(farm);
+    if (location && !data && !isLoading) {
+      fetchWeather(farm.lat, farm.lon, { days: 7, location, region: farm.region });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [farm.location]);
 
-  const limitations = toArray(data?.limitations);
+  const decision = dash?.decision;
+  const weather = data || dash?.weather;
 
   return (
     <div className="space-y-4">
       {!isLoggedIn ? (
-        <GuestBanner detail="Guests can check basic rainfall and temperature. Log in for full weather details." />
+        <GuestBanner detail="Guests see the rainfall outlook. Log in for full impact details and data quality notes." />
       ) : null}
       <form onSubmit={handleSubmit} className="space-y-3">
         <select
@@ -67,7 +65,7 @@ export default function Weather() {
           disabled={isLoading}
           className="flex w-full items-center justify-center rounded-xl bg-veld-800 py-3.5 text-sm font-semibold text-white active:bg-veld-900 disabled:opacity-60"
         >
-          {isLoading ? "Loading…" : "Check weather"}
+          {isLoading ? "Loading…" : "Check rainfall impact"}
         </button>
       </form>
 
@@ -75,47 +73,15 @@ export default function Weather() {
         <ErrorAlert message={error} onDismiss={() => setError(null)} />
       )}
 
-      {isLoading && <Loader label="Loading…" />}
+      {isLoading && <Loader label="Loading rainfall outlook…" />}
 
-      {!isLoading && data && (
-        <>
-          <Card title={data.match_value || farm.location}>
-            {visibleRows.length ? (
-              <dl className="space-y-3">
-                {visibleRows.map(({ key, label }) => (
-                  <div key={key} className="flex justify-between gap-3">
-                    <dt className="text-sm text-ink-muted">{label}</dt>
-                    <dd className="text-right text-sm font-semibold text-veld-900">
-                      {formatValue(data[key])}
-                      {key === "forecast_total_mm" && typeof data[key] === "number"
-                        ? " mm"
-                        : ""}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            ) : (
-              <p className="text-sm text-ink-muted">No weather details yet</p>
-            )}
-          </Card>
-
-          {isLoggedIn && limitations.length > 0 && (
-            <Card title="Data limitations">
-              <ul className="space-y-2">
-                {limitations.map((item, i) => (
-                  <li key={i} className="text-sm text-ink-muted">
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          )}
-          {!isLoggedIn && rows.length > 3 ? (
-            <p className="text-center text-xs text-ink-muted">
-              Log in to see full weather details.
-            </p>
-          ) : null}
-        </>
+      {!isLoading && weather && (
+        <RainfallImpactCard
+          decision={decision}
+          weather={weather}
+          title="Rainfall & Grass Recovery"
+          guestMode={!isLoggedIn}
+        />
       )}
     </div>
   );

@@ -23,7 +23,7 @@ const tabs = [
   },
   {
     to: "/weather",
-    label: "Weather",
+    label: "Rainfall",
     match: (path) => path.startsWith("/weather"),
     icon: WeatherIcon,
   },
@@ -83,12 +83,14 @@ export default function BottomTabBar() {
   const [indicator, setIndicator] = useState({ left: 0, width: 0, ready: false });
   const [pressed, setPressed] = useState(null);
 
-  const activeIndex = Math.max(
-    0,
-    tabs.findIndex((tab) => tab.match(pathname))
-  );
+  const matchedIndex = tabs.findIndex((tab) => tab.match(pathname));
+  const activeIndex = matchedIndex >= 0 ? matchedIndex : -1;
 
   const updateIndicator = () => {
+    if (activeIndex < 0) {
+      setIndicator((prev) => ({ ...prev, ready: false }));
+      return;
+    }
     const el = itemRefs.current[activeIndex];
     const track = navRef.current;
     if (!el || !track) return;

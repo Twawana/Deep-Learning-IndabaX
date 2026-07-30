@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useFarmContext } from "../context/FarmContext";
+import { useAuth } from "../context/AuthContext";
 
 const SCREENS = {
   "/": {
@@ -19,8 +20,16 @@ const SCREENS = {
     hint: (farm) => farm.location,
   },
   "/weather": {
-    title: "Weather",
+    title: "Rainfall",
     hint: (farm) => farm.location,
+  },
+  "/scenarios": {
+    title: "Scenario planner",
+    hint: (farm) => farm.location,
+  },
+  "/compare": {
+    title: "Compare camps",
+    hint: () => "Side-by-side grazing advice",
   },
   "/profile": {
     title: "Profile",
@@ -33,17 +42,26 @@ const SCREENS = {
   },
 };
 
+function resolveScreen(pathname) {
+  if (SCREENS[pathname]) return SCREENS[pathname];
+  if (pathname.startsWith("/scenarios")) return SCREENS["/scenarios"];
+  if (pathname.startsWith("/compare")) return SCREENS["/compare"];
+  if (pathname.startsWith("/admin")) return SCREENS["/admin"];
+  return SCREENS["/"];
+}
+
 export default function AppHeader({ action }) {
   const { pathname } = useLocation();
   const farm = useFarmContext();
-  const screen = SCREENS[pathname] || SCREENS["/"];
+  const { isLoggedIn, isPremium, currentUser } = useAuth();
+  const screen = resolveScreen(pathname);
   const [visible, setVisible] = useState(true);
   const [display, setDisplay] = useState(screen);
 
   useEffect(() => {
     setVisible(false);
     const timer = window.setTimeout(() => {
-      setDisplay(SCREENS[pathname] || SCREENS["/"]);
+      setDisplay(resolveScreen(pathname));
       setVisible(true);
     }, 120);
     return () => window.clearTimeout(timer);
@@ -70,7 +88,25 @@ export default function AppHeader({ action }) {
             </p>
           )}
         </div>
-        {action}
+        <div className="flex shrink-0 items-center gap-2">
+          {!isLoggedIn ? (
+            <Link
+              to="/profile"
+              className="rounded-full bg-mist px-2.5 py-1 text-[11px] font-semibold text-veld-800 ring-1 ring-veld-100"
+            >
+              Log in
+            </Link>
+          ) : (
+            <Link
+              to="/profile"
+              className="max-w-[7rem] truncate rounded-full bg-veld-800 px-2.5 py-1 text-[11px] font-semibold text-white"
+              title={currentUser?.name}
+            >
+              {isPremium ? "Premium" : currentUser?.name?.split(" ")[0] || "Account"}
+            </Link>
+          )}
+          {action}
+        </div>
       </div>
     </header>
   );

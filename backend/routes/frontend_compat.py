@@ -198,6 +198,7 @@ def chat(body: ChatRequest) -> dict[str, Any]:
         farm_notes=body.farm_notes,
         farmer_name=body.farmer_name,
         farm_name=body.farm_name,
+        land_tenure=body.land_tenure,
     )
 
 
@@ -213,8 +214,9 @@ def dashboard(
     lon: Optional[float] = Query(default=None),
     herd_size: Optional[Union[int, str]] = Query(default=None),
     livestock_type: Optional[str] = Query(default=None),
+    land_tenure: Optional[str] = Query(default=None),
 ) -> dict[str, Any]:
-    """Compose weather + pasture cards for the Farmar home screen."""
+    """Compose weather + pasture + decision-support cards for the Farmar home screen."""
     herd = _optional_int(herd_size)
     animal = livestock_type or "cattle"
 
@@ -227,6 +229,7 @@ def dashboard(
         lon=lon,
         herd_size=herd,
         livestock_type=animal,
+        land_tenure=land_tenure,
     )
     query, resolve_notes = _resolve_location(body)
     if not query:
@@ -234,6 +237,7 @@ def dashboard(
             "location": location or nearest_town or region,
             "weather": {"found": False, "message": "Location required"},
             "pasture_status": {"found": False, "message": "Location required"},
+            "decision": None,
             "alerts": [
                 "Choose a supported town or research site in your profile before loading the dashboard."
             ],
@@ -243,19 +247,20 @@ def dashboard(
 
     pasture_data = get_pasture_data(query)
     weather_data = get_weather(query)
-    grazing = None
-    if herd is not None:
-        grazing = calculate_grazing_pressure(
-            query,
-            herd_size=herd,
-            animal_type=animal,
-            pasture_data=pasture_data,
-        )
+    # Always assess grazing (soft pasture-only signals when herd is missing)
+    grazing = calculate_grazing_pressure(
+        query,
+        herd_size=herd,
+        animal_type=animal,
+        pasture_data=pasture_data,
+    )
     result = build_dashboard(
         location=query,
         pasture_data=pasture_data,
         weather_data=weather_data,
         grazing=grazing,
+        land_tenure=land_tenure,
+        herd_size=herd,
     )
     if resolve_notes:
         result["alerts"] = list(dict.fromkeys(resolve_notes + (result.get("alerts") or [])))

@@ -26,7 +26,13 @@ def _delta(a: Optional[float], b: Optional[float]) -> Optional[float]:
     return round(float(a) - float(b), 2)
 
 
-def compare_locations(location_a: str, location_b: str) -> dict[str, Any]:
+def compare_locations(
+    location_a: str,
+    location_b: str,
+    *,
+    land_tenure: Optional[str] = None,
+    herd_size: Optional[int] = None,
+) -> dict[str, Any]:
     """
     Compare pasture indicators between two locations.
 
@@ -35,14 +41,45 @@ def compare_locations(location_a: str, location_b: str) -> dict[str, Any]:
         location_b: Second location query.
 
     Returns:
-        CompareResponse-compatible JSON with side-by-side metrics and deltas.
+        CompareResponse-compatible JSON with side-by-side metrics, deltas,
+        rainfall outlook, decision snippets, and a farmer-facing summary.
     """
+    from services.decision_service import build_decision
+    from tools.grazing_tool import calculate_grazing_pressure
+    from tools.weather_tool import get_weather
+
     a = get_pasture_data(location_a)
     b = get_pasture_data(location_b)
+    wa = get_weather(location_a)
+    wb = get_weather(location_b)
+    ga = calculate_grazing_pressure(
+        location_a, herd_size=herd_size, pasture_data=a
+    )
+    gb = calculate_grazing_pressure(
+        location_b, herd_size=herd_size, pasture_data=b
+    )
+    da = build_decision(
+        location=location_a,
+        pasture_data=a,
+        weather_data=wa,
+        grazing=ga,
+        land_tenure=land_tenure,
+        herd_size=herd_size,
+    )
+    db = build_decision(
+        location=location_b,
+        pasture_data=b,
+        weather_data=wb,
+        grazing=gb,
+        land_tenure=land_tenure,
+        herd_size=herd_size,
+    )
 
     limitations = merge_limitations(
         a.get("limitations") or [],
         b.get("limitations") or [],
+        wa.get("limitations") or [],
+        wb.get("limitations") or [],
     )
 
     if not a.get("found") and not b.get("found"):
@@ -71,7 +108,6 @@ def compare_locations(location_a: str, location_b: str) -> dict[str, Any]:
     pb = b.get("pasture") or {}
     deltas = {key: _delta(pa.get(key), pb.get(key)) for key in METRIC_KEYS}
 
-    # Higher vegetation_cover / biomass generally better for grazing; higher bush / bare often worse
     notes: list[str] = []
     if deltas.get("vegetation_cover") is not None:
         if deltas["vegetation_cover"] > 0:
@@ -97,11 +133,53 @@ def compare_locations(location_a: str, location_b: str) -> dict[str, Any]:
     if not available_deltas:
         limitations.append("No overlapping numeric pasture metrics available for comparison")
 
+    # Farmer-facing summary (not a ranking invention — based on measured deltas + decisions)
+    cover_delta = deltas.get("vegetation_cover") or 0
+    bush_delta = deltas.get("bush_encroachment") or 0
+    prefer_a = 0
+    prefer_b = 0
+    if cover_delta > 2:
+        prefer_a += 1
+    elif cover_delta < -2:
+        prefer_b += 1
+    if bush_delta < -2:
+        prefer_a += 1
+    elif bush_delta > 2:
+        prefer_b += 1
+    if da.get("action_priority") in {"stay", "monitor"} and db.get("action_priority") in {
+        "move_soon",
+        "move_now",
+    }:
+        prefer_a += 1
+    if db.get("action_priority") in {"stay", "monitor"} and da.get("action_priority") in {
+        "move_soon",
+        "move_now",
+    }:
+        prefer_b += 1
+
+    if prefer_a > prefer_b:
+        farmer_summary = (
+            f"Based on current conditions, {location_a} appears to offer healthier grazing "
+            f"signals than {location_b}, with better vegetation cover and/or lower bush pressure. "
+            f"{location_b} may benefit from a longer recovery period."
+        )
+    elif prefer_b > prefer_a:
+        farmer_summary = (
+            f"Based on current conditions, {location_b} appears to offer healthier grazing "
+            f"signals than {location_a}. {location_a} is currently under greater grazing pressure "
+            "and would likely benefit from more rest."
+        )
+    else:
+        farmer_summary = (
+            f"Based on available data, {location_a} and {location_b} look broadly similar. "
+            "Walk both camps and weigh local water, access, and neighbour grazing pressure."
+        )
+
     confidence = confidence_from_limitations(limitations, high_max=1, medium_max=4)
     if confidence == "high":
         confidence = "medium"
 
-    return CompareResponse(
+    payload = CompareResponse(
         found=True,
         location_a={
             "location": a.get("location"),
@@ -124,7 +202,26 @@ def compare_locations(location_a: str, location_b: str) -> dict[str, Any]:
                 "Higher vegetation_cover and biomass generally indicate more forage signal",
                 "Higher bush_encroachment and bare ground generally indicate more woody/bare pressure",
             ],
+            "farmer_summary": farmer_summary,
+            "decision_a": {
+                "action_priority": da.get("action_priority"),
+                "headline": da.get("headline"),
+                "recommended_action": da.get("recommended_action"),
+                "pasture_health": (da.get("pasture_health") or {}).get("label"),
+                "rainfall_outlook": ((da.get("rainfall_impact") or {}).get("outlook") or "")[:180],
+            },
+            "decision_b": {
+                "action_priority": db.get("action_priority"),
+                "headline": db.get("headline"),
+                "recommended_action": db.get("recommended_action"),
+                "pasture_health": (db.get("pasture_health") or {}).get("label"),
+                "rainfall_outlook": ((db.get("rainfall_impact") or {}).get("outlook") or "")[:180],
+            },
         },
         limitations=limitations,
         confidence=confidence,  # type: ignore[arg-type]
     ).model_dump()
+    payload["farmer_summary"] = farmer_summary
+    payload["decision_a"] = da
+    payload["decision_b"] = db
+    return payload

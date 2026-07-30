@@ -6,6 +6,8 @@ import Pasture from "./pages/Pasture";
 import Weather from "./pages/Weather";
 import Profile from "./pages/Profile";
 import AdminPanel from "./pages/AdminPanel";
+import Scenarios from "./pages/Scenarios";
+import Compare from "./pages/Compare";
 
 export default function App() {
   return (
@@ -16,6 +18,8 @@ export default function App() {
           <Route path="chat" element={<Chat />} />
           <Route path="pasture" element={<Pasture />} />
           <Route path="weather" element={<Weather />} />
+          <Route path="scenarios" element={<Scenarios />} />
+          <Route path="compare" element={<Compare />} />
           <Route path="profile" element={<Profile />} />
           <Route path="admin" element={<AdminPanel />} />
           <Route path="*" element={<Navigate to="/" replace />} />

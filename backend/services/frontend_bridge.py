@@ -190,11 +190,25 @@ def build_dashboard(
     pasture_data: dict[str, Any],
     weather_data: dict[str, Any],
     grazing: Optional[dict[str, Any]] = None,
+    land_tenure: Optional[str] = None,
+    herd_size: Optional[int] = None,
 ) -> dict[str, Any]:
+    from services.decision_service import build_decision
+
     pasture_status = pasture_status_for_ui(pasture_data)
     weather_status = weather_status_for_ui(weather_data)
+    grazing = grazing or {}
     alerts: list[str] = []
     recommendations: list[str] = []
+
+    decision = build_decision(
+        location=location,
+        pasture_data=pasture_data,
+        weather_data=weather_data,
+        grazing=grazing,
+        land_tenure=land_tenure,
+        herd_size=herd_size,
+    )
 
     for item in pasture_status.get("limitations") or []:
         if "old" in item.lower() or "dated" in item.lower():
@@ -203,15 +217,16 @@ def build_dashboard(
         if "fail" in item.lower() or "unavailable" in item.lower():
             alerts.append(item)
 
-    if grazing:
-        risk = grazing.get("grazing_risk")
-        if risk in {"high", "medium"}:
-            alerts.append(f"Grazing risk signal: {risk} - {grazing.get('reason')}")
-        recommendations.extend((grazing.get("signals") or [])[:3])
-        if grazing.get("confidence") == "low":
-            recommendations.append(
-                "Treat advice as provisional - carrying capacity is not in the dataset."
-            )
+    risk = grazing.get("grazing_risk")
+    if risk in {"high", "medium"}:
+        alerts.append(f"Grazing risk signal: {risk} - {grazing.get('reason')}")
+    recommendations.extend((grazing.get("signals") or [])[:3])
+    if decision.get("recommended_action"):
+        recommendations.insert(0, decision["recommended_action"])
+    if grazing.get("confidence") == "low":
+        recommendations.append(
+            "Treat advice as provisional - carrying capacity is not in the dataset."
+        )
 
     if not pasture_data.get("found"):
         alerts.append(pasture_data.get("message") or "Pasture location not found in dataset")
@@ -222,209 +237,12 @@ def build_dashboard(
         "location": location,
         "weather": weather_status,
         "pasture_status": pasture_status,
+        "grazing_assessment": grazing,
+        "decision": decision,
         "alerts": list(dict.fromkeys(alerts)),
         "recommendations": list(dict.fromkeys(recommendations)),
         "confidence": pasture_data.get("confidence") or weather_data.get("confidence") or "low",
     }
-
-
-def _build_free_response(
-    *,
-    location: str,
-    pasture_data: dict[str, Any],
-    weather_data: dict[str, Any],
-    grazing: dict[str, Any],
-    weather_ui: dict[str, Any],
-    is_guest: bool = False,
-) -> tuple[str, list[str], str]:
-    risk = _risk_phrase(grazing.get("grazing_risk"))
-    rain_words = _rainfall_context_words(
-        weather_ui.get("recent_rainfall_mm"),
-        (weather_data.get("recent_rainfall") or {}).get("days"),
-    )
-
-    if not pasture_data.get("found"):
-        body = (
-            f"I could not find rangeland survey data for {location}. "
-            "Please choose a supported town or research site in your profile, "
-            "then ask again."
-        )
-        return body, [], body
-
-    if risk in {"high", "moderate"}:
-        body = (
-            f"Around {location}, grazing pressure looks {risk} and {rain_words}. "
-            "Pasture recovery may be slow. It would be safer to ease pressure "
-            "or rotate camps soon."
-        )
-    elif risk == "low":
-        body = (
-            f"Around {location}, grazing pressure looks relatively low and {rain_words}. "
-            "Conditions look manageable for now, but keep watching the camp closely."
-        )
-    else:
-        body = (
-            f"Around {location}, the available pasture and rainfall signals are mixed. "
-            "Use caution and check the camp on the ground before deciding."
-        )
-
-    cta = GUEST_LOGIN_CTA if is_guest else FREE_UPGRADE_CTA
-    response = f"{body}\n\n{cta}"
-    reasoning = (
-        "Short free-tier guidance from pasture and weather signals, "
-        "without detailed numbers."
-    )
-    return response, [], reasoning
-
-
-def _build_premium_response(
-    *,
-    message: str,
-    location: str,
-    herd_size: Optional[int],
-    livestock_type: Optional[str],
-    pasture_data: dict[str, Any],
-    weather_data: dict[str, Any],
-    grazing: dict[str, Any],
-    pasture_ui: dict[str, Any],
-    weather_ui: dict[str, Any],
-    b2b: bool,
-) -> tuple[str, list[str], str]:
-    lines: list[str] = []
-    recommendations: list[str] = []
-    risk = _risk_phrase(grazing.get("grazing_risk"))
-    rain_words = _rainfall_context_words(
-        weather_ui.get("recent_rainfall_mm"),
-        (weather_data.get("recent_rainfall") or {}).get("days"),
-    )
-    animal = livestock_type or "livestock"
-
-    if b2b:
-        lines.append(
-            f"Regional view for {location}: combining local rangeland observations "
-            "with recent weather to support extension-style advice."
-        )
-
-    if herd_size is None:
-        lines.append(
-            "Herd size was not provided. Advice is more useful once you set herd size "
-            "in your profile."
-        )
-
-    if pasture_data.get("found"):
-        obs = pasture_ui.get("observation_date") or "an unknown date"
-        lines.append(
-            f"Based on {risk} grazing pressure signals and {rain_words}, "
-            f"pasture recovery around {location} needs careful management."
-        )
-        lines.append(
-            f"Latest survey reading (around {obs}) shows vegetation cover about "
-            f"{_fmt(pasture_ui.get('vegetation_cover'), '%')}, bush/woody presence about "
-            f"{_fmt(pasture_ui.get('bush_encroachment'), '%')}, and biomass about "
-            f"{_fmt(pasture_ui.get('biomass'))}. These are measured values — not guesses."
-        )
-        if pasture_ui.get("cover_bare_ground_pct") is not None:
-            lines.append(
-                f"Bare ground is around {_fmt(pasture_ui.get('cover_bare_ground_pct'), '%')}, "
-                "which helps judge how much rest the camp may need."
-            )
-    else:
-        lines.append(
-            f"I could not find pasture survey data for '{location}' in the processed "
-            "Namibia dataset. Without that, stocking advice stays limited."
-        )
-
-    if weather_data.get("found"):
-        lines.append(
-            f"Rainfall context: about {_fmt(weather_ui.get('recent_rainfall_mm'), ' mm')} "
-            f"in the recent window, with about {_fmt(weather_ui.get('forecast_total_mm'), ' mm')} "
-            f"in the near-term forecast. Near-term temperature: "
-            f"{_fmt(weather_ui.get('temperature'))}."
-        )
-    else:
-        lines.append("Weather could not be resolved for this location.")
-
-    # Carrying capacity is not in the dataset — say so clearly.
-    lines.append(
-        "Exact carrying capacity is not available in this dataset, so stocking advice "
-        "stays qualitative and should be checked against what you see in the camp."
-    )
-
-    if grazing.get("reason"):
-        lines.append(f"Grazing assessment: {grazing.get('reason')}")
-
-    confidence = grazing.get("confidence") or pasture_data.get("confidence") or "low"
-    if confidence == "low":
-        lines.append(
-            "Confidence is limited because some signals are missing or dated — "
-            "treat this as guidance, not a guarantee."
-        )
-
-    # Actionable next steps
-    if risk == "high":
-        recommendations.extend(
-            [
-                f"Move {animal} out of the hardest-hit camp within the next few days if possible.",
-                "Rest the paddock and reduce stocking pressure until cover improves.",
-                "Check water points daily while rainfall stays limited.",
-            ]
-        )
-    elif risk == "moderate":
-        recommendations.extend(
-            [
-                "Rotate within the week if animals are concentrated in one camp.",
-                "Watch forage height and bare patches over the next 7–10 days.",
-                "Plan a lighter stocking rate until rainfall improves recovery.",
-            ]
-        )
-    else:
-        recommendations.extend(
-            [
-                "Continue current grazing if the camp still looks good on the ground.",
-                "Keep a light rotation plan ready in case dry weather continues.",
-            ]
-        )
-
-    if pasture_ui.get("bush_encroachment") is not None and pasture_ui["bush_encroachment"] >= 25:
-        recommendations.append(
-            "Bush is relatively high — keep cattle where grass access is still open."
-        )
-
-    if weather_ui.get("forecast_total_mm") is not None and weather_ui["forecast_total_mm"] == 0:
-        recommendations.append(
-            "Little/no rain in the forecast window — plan water and forage carefully."
-        )
-
-    for signal in (grazing.get("signals") or [])[:2]:
-        if isinstance(signal, str) and signal not in recommendations:
-            recommendations.append(signal)
-
-    if b2b:
-        recommendations.append(
-            "At regional level, prioritize camps with weaker cover and coordinate "
-            "rotation advice across neighbouring farms where possible."
-        )
-
-    if not recommendations:
-        recommendations.append(
-            "Walk the camp and compare what you see with the pasture and rainfall signals above."
-        )
-
-    action_block = "Clear next actions:\n" + "\n".join(
-        f"- {item}" for item in recommendations[:5]
-    )
-    response = "\n\n".join(lines + [action_block])
-
-    reasoning = (
-        f"Question: {message}\n"
-        f"Location: {location}\n"
-        f"Herd size: {herd_size if herd_size is not None else 'not provided'}\n"
-        f"Pasture found={pasture_data.get('found')}, confidence={pasture_data.get('confidence')}\n"
-        f"Weather found={weather_data.get('found')}, confidence={weather_data.get('confidence')}\n"
-        f"Grazing risk={grazing.get('grazing_risk')}, confidence={grazing.get('confidence')}\n"
-        f"B2B context={'yes' if b2b else 'no'}"
-    )
-    return response, recommendations[:5], reasoning
 
 
 def build_chat_response(
@@ -439,8 +257,11 @@ def build_chat_response(
     farm_notes: Optional[str] = None,
     farmer_name: Optional[str] = None,
     farm_name: Optional[str] = None,
+    land_tenure: Optional[str] = None,
 ) -> dict[str, Any]:
     """Shape POST /chat response expected by the Farmar frontend (pre-Gemini)."""
+    from services.decision_service import advisor_prose_from_decision, build_decision
+
     # Guests never get premium depth, even if a bad client sends premium.
     tier = "free" if is_guest else _normalize_tier(user_tier)
     pasture_data = advisor.get("pasture_data") or {}
@@ -455,72 +276,127 @@ def build_chat_response(
         farm_name=farm_name,
     )
 
+    decision = build_decision(
+        location=location,
+        pasture_data=pasture_data,
+        weather_data=weather_data,
+        grazing=grazing,
+        land_tenure=land_tenure,
+        herd_size=herd_size,
+    )
+
+    prose = advisor_prose_from_decision(
+        decision=decision, location=location, message=message
+    )
+    explainer = decision.get("explainer") or {}
+    recommendations = list(
+        dict.fromkeys(
+            [decision.get("recommended_action")]
+            + list(explainer.get("monitor_next") or [])
+            + (grazing.get("signals") or [])[:2]
+        )
+    )
+    recommendations = [r for r in recommendations if r]
+
+    if b2b:
+        prose = (
+            f"Regional / extension view for {location}:\n\n" + prose + "\n\n"
+            "At regional level, prioritize camps with weaker cover and coordinate "
+            "rotation advice across neighbouring farms where possible."
+        )
+
     if tier == "free":
-        response, recommendations, reasoning = _build_free_response(
-            location=location,
-            pasture_data=pasture_data,
-            weather_data=weather_data,
-            grazing=grazing,
-            weather_ui=weather_ui,
-            is_guest=is_guest,
+        cta = GUEST_LOGIN_CTA if is_guest else FREE_UPGRADE_CTA
+        short = (
+            f"{decision.get('headline')}: {decision.get('recommended_action')}\n\n"
+            f"{(decision.get('grazing_conditions') or {}).get('combined_assessment', '')}\n\n"
+            f"{cta}"
         )
         tools_used = [
             {"name": "get_pasture_data", "summary": f"Pasture lookup for {location}"},
             {"name": "get_weather", "summary": f"Weather context for {location}"},
         ]
         sources = None
+        # Free still gets a compact decision (action + why checks), not a black box.
+        decision_out = {
+            "action_priority": decision.get("action_priority"),
+            "headline": decision.get("headline"),
+            "recommended_action": decision.get("recommended_action"),
+            "explainer": {
+                "what": explainer.get("what"),
+                "why": (explainer.get("why") or [])[:2],
+                "checks": explainer.get("checks"),
+            },
+            "confidence": decision.get("confidence"),
+        }
         limitations = [
             "Free plan: short guidance only.",
-            "Detailed metrics and forecasts are available on Premium.",
+            "Detailed metrics, timeline, and full evidence are available on Premium.",
         ]
-    else:
-        response, recommendations, reasoning = _build_premium_response(
-            message=message,
-            location=location,
-            herd_size=herd_size,
-            livestock_type=livestock_type,
-            pasture_data=pasture_data,
-            weather_data=weather_data,
-            grazing=grazing,
-            pasture_ui=pasture_ui,
-            weather_ui=weather_ui,
-            b2b=b2b,
+        reasoning = (
+            "Short free-tier guidance from pasture and weather signals, "
+            "without detailed technical numbers."
         )
-        tools_used = [
-            {
-                "name": "get_pasture_data",
-                "summary": f"Pasture lookup for {location}",
-            },
-            {
-                "name": "get_weather",
-                "summary": f"Open-Meteo rainfall/forecast for {location}",
-            },
-            {
-                "name": "calculate_grazing_pressure",
-                "summary": f"Grazing assessment risk={grazing.get('grazing_risk')}",
-            },
-        ]
-        sources = {
-            "pasture": pasture_ui,
-            "weather": weather_ui,
-            "grazing_assessment": grazing,
+        return {
+            "response": short,
+            "reasoning": reasoning,
+            "recommendations": [],
+            "tools_used": tools_used,
+            "sources": sources,
+            "decision": decision_out,
+            "limitations": "; ".join(limitations),
+            "confidence": advisor.get("confidence") or "low",
+            "user_tier": tier,
         }
-        limitations = list(
-            dict.fromkeys(
-                (advisor.get("limitations") or [])
-                + [
-                    "Carrying capacity is not available in the dataset.",
-                    "Always verify conditions on the ground before moving animals.",
-                ]
-            )
+
+    # Premium: natural prose + full decision + evidence
+    if herd_size is None:
+        prose += (
+            "\n\nHerd size was not set in your profile — advice is stronger once you add it."
         )
 
+    tools_used = [
+        {"name": "get_pasture_data", "summary": f"Pasture lookup for {location}"},
+        {"name": "get_weather", "summary": f"Open-Meteo rainfall/forecast for {location}"},
+        {
+            "name": "calculate_grazing_pressure",
+            "summary": f"Grazing assessment risk={grazing.get('grazing_risk')}",
+        },
+    ]
+    sources = {
+        "pasture": pasture_ui,
+        "weather": weather_ui,
+        "grazing_assessment": grazing,
+        "decision": decision,
+    }
+    limitations = list(
+        dict.fromkeys(
+            (advisor.get("limitations") or [])
+            + [
+                "Carrying capacity is not available in the dataset.",
+                "Always verify conditions on the ground before moving animals.",
+            ]
+        )
+    )
+    reasoning = (
+        f"Question: {message}\n"
+        f"Location: {location}\n"
+        f"Action: {decision.get('action_priority')} ({decision.get('headline')})\n"
+        f"Herd size: {herd_size if herd_size is not None else 'not provided'}\n"
+        f"Land tenure: {land_tenure or 'unknown'}\n"
+        f"Pasture found={pasture_data.get('found')}, confidence={pasture_data.get('confidence')}\n"
+        f"Weather found={weather_data.get('found')}, confidence={weather_data.get('confidence')}\n"
+        f"Grazing risk={grazing.get('grazing_risk')}, confidence={grazing.get('confidence')}\n"
+        f"B2B context={'yes' if b2b else 'no'}"
+    )
+
     return {
-        "response": response,
+        "response": prose,
         "reasoning": reasoning,
-        "recommendations": recommendations,
+        "recommendations": recommendations[:5],
         "tools_used": tools_used,
         "sources": sources,
+        "decision": decision,
         "limitations": "; ".join(limitations) if isinstance(limitations, list) else str(limitations),
         "confidence": advisor.get("confidence") or "low",
         "user_tier": tier,
