@@ -23,7 +23,7 @@ export default function ChatBox({
   onSend,
   disabled = false,
   suggestions,
-  emptyPrompt = "Ask about your pasture or herd",
+  emptyPrompt = "Ask Oryx about your pasture or herd",
 }) {
   const [input, setInput] = useState("");
   const [autoRead, setAutoRead] = useState(false);

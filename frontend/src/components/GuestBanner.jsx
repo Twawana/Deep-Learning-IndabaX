@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 
 export default function GuestBanner({
   title = "Browsing as guest",
-  detail = "You can check basic pasture and weather now. Log in to unlock full details, unlimited Ask, and Premium AI.",
+  detail = "You can check basic pasture and weather now. Log in to unlock full details, unlimited Oryx, and Premium AI.",
 }) {
   return (
     <div className="rounded-xl border border-veld-200 bg-white px-3 py-2.5">

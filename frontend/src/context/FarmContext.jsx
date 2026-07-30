@@ -4,6 +4,8 @@ import {
   FARM_STORAGE_KEY,
   NAMIBIA_LOCATIONS,
 } from "../utils/constants";
+import { enqueueSync, saveFarmProfile } from "../db/offlineDb";
+import { pushOfflineQueue } from "../services/syncService";
 
 const FarmContext = createContext(null);
 
@@ -12,7 +14,6 @@ function loadStoredProfile() {
     const raw = localStorage.getItem(FARM_STORAGE_KEY);
     if (!raw) return DEFAULT_FARM_CONTEXT;
     const parsed = { ...DEFAULT_FARM_CONTEXT, ...JSON.parse(raw) };
-    // Migrate away from unsupported saved towns
     const known = NAMIBIA_LOCATIONS.some((loc) => loc.name === parsed.location);
     if (!known) {
       return { ...DEFAULT_FARM_CONTEXT };
@@ -28,6 +29,13 @@ export function FarmProvider({ children }) {
 
   useEffect(() => {
     localStorage.setItem(FARM_STORAGE_KEY, JSON.stringify(context));
+    const timer = setTimeout(() => {
+      saveFarmProfile(context).catch(() => {});
+      enqueueSync("farm_profile", context)
+        .then(() => pushOfflineQueue())
+        .catch(() => {});
+    }, 400);
+    return () => clearTimeout(timer);
   }, [context]);
 
   const update = useCallback((patch) => {

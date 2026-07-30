@@ -728,17 +728,30 @@ def advisor_prose_from_decision(
 ) -> str:
     """Natural extension-officer style paragraph from a decision block."""
     pasture = (decision.get("pasture_health") or {}).get("summary") or ""
-    rain = (decision.get("rainfall_impact") or {}).get("outlook") or ""
+    rain_block = decision.get("rainfall_impact") or {}
+    rain = rain_block.get("outlook") or ""
+    rain_level = (rain_block.get("level") or "").lower()
     action = decision.get("recommended_action") or ""
     combined = (decision.get("grazing_conditions") or {}).get("combined_assessment") or ""
+    weather_available = rain_level not in {"", "unknown"}
+
+    opener = (
+        f"Based on the pasture condition and recent rainfall around {location}, "
+        if weather_available
+        else f"Based on the local pasture data for {location}, "
+    )
+    closer = (
+        "This is guidance from available field and weather data — always verify conditions on the ground."
+        if weather_available
+        else "This is guidance from the local advisory dataset — always verify conditions on the ground."
+    )
 
     parts = [
-        f"Based on the pasture condition and recent rainfall around {location}, "
-        f"{action[0].lower() + action[1:] if action else 'keep monitoring the camp.'}",
+        f"{opener}{action[0].lower() + action[1:] if action else 'keep monitoring the camp.'}",
         pasture,
-        rain.split("Impact")[0].strip() if rain else "",
+        rain.split("Impact")[0].strip() if rain and weather_available else "",
         combined,
-        "This is guidance from available field and weather data — always verify conditions on the ground.",
+        closer,
     ]
     # Deduplicate empty / near-duplicate sentences
     seen: set[str] = set()

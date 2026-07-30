@@ -138,14 +138,31 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
+  // Push device offline queue → Supabase when connectivity returns
+  useEffect(() => {
+    let stop = () => {};
+    import("../services/syncService")
+      .then(({ startAutoSync }) => {
+        stop = startAutoSync(
+          () => (state.currentUser?.id !== "guest" ? state.currentUser?.id : null)
+        );
+      })
+      .catch(() => {});
+    return () => stop();
+  }, [state.currentUser?.id]);
+
   const withBackendState = async (request) => {
     try {
       const data = await request();
       applyRemoteState(data);
       return { ok: true, message: data?.message || "Updated." };
     } catch (error) {
+      const detail = error?.response?.data?.detail;
       const message =
-        error?.response?.data?.detail || error?.message || "Request failed.";
+        (typeof detail === "string" && detail) ||
+        (Array.isArray(detail) && detail.map((d) => d?.msg || d).join(" ")) ||
+        error?.message ||
+        "Request failed.";
       return { ok: false, message };
     }
   };
@@ -174,8 +191,8 @@ export function AuthProvider({ children }) {
       : { ok: true, message: "Logged out on this device." };
   };
 
-  const upgradePlan = async (tier = "premium") => {
-    return withBackendState(() => upgradeSubscription(tier));
+  const upgradePlan = async (tier = "premium", payment = null) => {
+    return withBackendState(() => upgradeSubscription(tier, payment));
   };
 
   const currentUser = state.currentUser || GUEST_USER;

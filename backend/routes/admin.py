@@ -103,6 +103,27 @@ class UpdateSettingsBody(BaseModel):
 
 class UpgradeBody(BaseModel):
     tier: Literal["free", "premium"] = "premium"
+    # Demo payment stub — never send/store full card numbers.
+    payment: Optional[dict[str, Any]] = None
+
+
+def _validate_premium_payment(payment: Optional[dict[str, Any]]) -> Optional[str]:
+    """Lightweight demo checks so Premium is not a one-click free switch."""
+    if not isinstance(payment, dict):
+        return "Card payment details are required to upgrade to Premium."
+    last4 = str(payment.get("last4") or "").strip()
+    name = str(payment.get("cardholder_name") or "").strip()
+    brand = str(payment.get("brand") or "").strip()
+    if len(last4) != 4 or not last4.isdigit():
+        return "Invalid card details (last4)."
+    if len(name) < 2:
+        return "Cardholder name is required."
+    if not brand:
+        return "Card brand is required."
+    for key in ("card_number", "number", "cvc", "cvv"):
+        if payment.get(key):
+            return "Do not send full card numbers to the server."
+    return None
 
 
 def _now() -> str:
@@ -336,17 +357,46 @@ def upgrade_subscription(
 ) -> dict[str, Any]:
     state = _normalize_state(_load_state())
     current = _require_user(state, x_session_token)
+
+    payment_meta: Optional[dict[str, Any]] = None
+    if body.tier == "premium":
+        err = _validate_premium_payment(body.payment)
+        if err:
+            raise HTTPException(status_code=400, detail=err)
+        assert body.payment is not None
+        payment_meta = {
+            "last4": str(body.payment.get("last4")),
+            "brand": str(body.payment.get("brand")),
+            "cardholder_name": str(body.payment.get("cardholder_name")),
+            "billing_country": body.payment.get("billing_country"),
+            "amount_label": body.payment.get("amount_label") or "N$89 per month",
+            "demo": True,
+            "paid_at": _now(),
+        }
+
     for user in state["users"]:
         if user["id"] != current["id"]:
             continue
         user["tier"] = body.tier
+        if body.tier == "premium" and payment_meta:
+            user["subscription"] = {
+                "plan": "premium",
+                "status": "active",
+                "payment": payment_meta,
+            }
+        elif body.tier == "free":
+            user["subscription"] = {"plan": "free", "status": "cancelled"}
         current = user
         break
     state = _save_state(state)
-    label = "Premium" if body.tier == "premium" else "Free"
+    if body.tier == "premium":
+        last4 = (payment_meta or {}).get("last4", "****")
+        message = f"Payment successful. Premium unlocked (card ending {last4})."
+    else:
+        message = "Subscription updated to Free."
     return _state_response(
         state,
-        message=f"Subscription updated to {label}.",
+        message=message,
         current_user=current,
     )
 

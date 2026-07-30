@@ -17,13 +17,13 @@ export default function Chat() {
       {!isLoggedIn ? (
         <div className="border-b border-veld-100 px-3 py-2">
           <GuestBanner
-            title="Guest Ask"
-            detail={`Basic answers available (${guestAsksRemaining} left). Log in for unlimited free Ask, or upgrade for Premium AI.`}
+            title="Guest Oryx"
+            detail={`Basic answers available (${guestAsksRemaining} left). Log in for unlimited free Oryx, or upgrade for Premium AI.`}
           />
         </div>
       ) : !isPremium ? (
         <div className="border-b border-veld-100 bg-white px-3 py-2 text-xs text-ink-muted">
-          Free plan: short answers. Upgrade on Profile for detailed grazing AI.
+          Free plan: short Oryx answers. Upgrade on Profile for detailed grazing AI.
         </div>
       ) : null}
 

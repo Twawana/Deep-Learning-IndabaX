@@ -1,9 +1,16 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { sendMessage } from "../services/api";
 import { datasetLocation } from "../utils/constants";
 import { getErrorMessage } from "../utils/format";
 import { useFarmContext } from "../context/FarmContext";
 import { useAuth } from "../context/AuthContext";
+import {
+  cacheRangeland,
+  enqueueSync,
+  listChatMessages,
+  saveChatMessage,
+} from "../db/offlineDb";
+import { pushOfflineQueue } from "../services/syncService";
 
 function toOptionalInt(value) {
   if (value === "" || value === null || value === undefined) return undefined;
@@ -22,6 +29,7 @@ export function useChat() {
     guestAsksRemaining,
     trackAiUsage,
     appSettings,
+    currentUser,
   } = useAuth();
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -30,6 +38,31 @@ export function useChat() {
 
   const clearError = useCallback(() => setError(null), []);
 
+  // Restore previous AI responses from device offline store
+  useEffect(() => {
+    let alive = true;
+    listChatMessages(80)
+      .then((rows) => {
+        if (!alive || !rows.length) return;
+        setMessages(
+          rows.map((row) => ({
+            id: row.id,
+            role: row.role,
+            content: row.content,
+            tools_used: row.tools_used || [],
+            decision: row.decision || null,
+            agent: row.agent || null,
+            mode: row.mode || null,
+            timestamp: row.created_at,
+          }))
+        );
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const send = useCallback(
     async (text) => {
       const trimmed = text.trim();
@@ -37,14 +70,14 @@ export function useChat() {
 
       if (appSettings?.maintenanceMode && !isAdmin) {
         setError(
-          "Ask is temporarily limited while maintenance mode is on. Try again later."
+          "Oryx is temporarily limited while maintenance mode is on. Try again later."
         );
         return null;
       }
 
       if (!isLoggedIn && !canAskAsGuest) {
         setError(
-          "Guest Ask limit reached. Log in on Profile for unlimited free answers, or upgrade for Premium AI."
+          "Guest Oryx limit reached. Log in on Profile for unlimited free answers, or upgrade for Premium AI."
         );
         return null;
       }
@@ -59,10 +92,13 @@ export function useChat() {
         id: `user-${Date.now()}`,
         role: "user",
         content: trimmed,
+        location,
         timestamp: new Date().toISOString(),
       };
 
       setMessages((prev) => [...prev, userMessage]);
+      saveChatMessage(userMessage).catch(() => {});
+      enqueueSync("chat_message", userMessage).catch(() => {});
       setIsLoading(true);
       setError(null);
 
@@ -71,7 +107,6 @@ export function useChat() {
         content: m.content,
       }));
 
-      // Guests and free accounts get free-tier answers; premium only when logged in + upgraded.
       const effectiveTier = isPremium ? "premium" : "free";
 
       try {
@@ -112,11 +147,42 @@ export function useChat() {
           decision: data.decision || null,
           limitations: data.limitations || "",
           user_tier: data.user_tier || effectiveTier,
+          agent: data.agent || null,
+          mode: data.mode || null,
+          location,
           timestamp: new Date().toISOString(),
         };
 
         setLastTools(aiMessage.tools_used);
         setMessages((prev) => [...prev, aiMessage]);
+        saveChatMessage(aiMessage).catch(() => {});
+        enqueueSync("chat_message", {
+          role: aiMessage.role,
+          content: aiMessage.content,
+          location,
+          agent: aiMessage.agent,
+          mode: aiMessage.mode,
+          tools_used: aiMessage.tools_used,
+          decision: aiMessage.decision,
+        }).catch(() => {});
+
+        if (data.sources?.pasture || data.sources?.weather) {
+          const cachePayload = {
+            pasture: data.sources.pasture,
+            weather: data.sources.weather,
+            source: data.mode || "chat",
+          };
+          cacheRangeland(location, cachePayload).catch(() => {});
+          enqueueSync("rangeland_cache", {
+            location_key: location,
+            data: cachePayload,
+          }).catch(() => {});
+        }
+
+        pushOfflineQueue(currentUser?.id !== "guest" ? currentUser?.id : null).catch(
+          () => {}
+        );
+
         try {
           await trackAiUsage();
         } catch {
@@ -124,7 +190,16 @@ export function useChat() {
         }
         return aiMessage;
       } catch (err) {
-        setError(getErrorMessage(err, "Failed to send message."));
+        // Offline / network failure: answer from cached rangeland if possible
+        const offline =
+          typeof navigator !== "undefined" && navigator.onLine === false;
+        if (offline) {
+          setError(
+            "You're offline. Showing cached advice when available — Oryx AI needs a connection."
+          );
+        } else {
+          setError(getErrorMessage(err, "Failed to send message."));
+        }
         return null;
       } finally {
         setIsLoading(false);
@@ -141,6 +216,7 @@ export function useChat() {
       canAskAsGuest,
       trackAiUsage,
       appSettings?.maintenanceMode,
+      currentUser?.id,
     ]
   );
 

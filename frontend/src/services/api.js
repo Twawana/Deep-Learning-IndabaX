@@ -282,8 +282,12 @@ export async function logoutAccount() {
   }
 }
 
-export async function upgradeSubscription(tier = "premium") {
-  const { data } = await api.post("/admin/upgrade", { tier });
+export async function upgradeSubscription(tier = "premium", payment = null) {
+  const payload = { tier };
+  if (tier === "premium" && payment) {
+    payload.payment = payment;
+  }
+  const { data } = await api.post("/admin/upgrade", payload);
   return data;
 }
 

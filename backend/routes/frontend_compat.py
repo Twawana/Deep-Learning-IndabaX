@@ -1,7 +1,8 @@
 """
 Frontend-facing chat + dashboard routes.
 
-Reuse existing pasture/weather/grazing tools. Chat is pre-Gemini (deterministic summary).
+Online: Oryx (Gemini) with agentic tool-calling — model chooses pasture vs weather tools.
+Offline: local advisory dataset tools only (no Gemini, no Open-Meteo).
 """
 
 from __future__ import annotations
@@ -12,9 +13,15 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 
 from services import dataset_service
-from services.agent_router import build_intent_answer, detect_intents
+from services.agent_router import (
+    build_intent_answer,
+    detect_intents,
+    is_greeting,
+    needs_farm_tools,
+)
 from services.dataset_bridge import is_political_region
 from services.frontend_bridge import build_chat_response, build_dashboard
+from services.gemini_agent import AGENT_NAME, gemini_configured, is_online, run_vision_agent
 from tools.grazing_tool import calculate_grazing_pressure
 from tools.history_tool import compare_to_prior_year
 from tools.pasture_tool import get_pasture_data
@@ -144,19 +151,63 @@ def _norm_diff(a: str, b: str) -> bool:
     return " ".join(a.lower().split()) != " ".join(b.lower().split())
 
 
+def _greeting_response(
+    *,
+    message: str,
+    location: Optional[str],
+    farmer_name: Optional[str],
+    user_tier: str,
+    is_guest: bool,
+) -> dict[str, Any]:
+    """Friendly Oryx reply for hi/hello — no tools, no decision card."""
+    name = (farmer_name or "").strip()
+    hello = f"Hi {name}!" if name else "Hi!"
+    place = f" for {location}" if location else ""
+    text = (
+        f"{hello} I'm {AGENT_NAME}, your Namibian veld grazing advisor{place}.\n\n"
+        "Ask me about pasture condition, rainfall, stocking, whether to move the herd, "
+        "or try a what-if (e.g. “what if I add 20 cattle?”)."
+    )
+    tier = "free" if is_guest else (
+        "premium" if str(user_tier).strip().lower() == "premium" else "free"
+    )
+    return {
+        "response": text,
+        "reasoning": f"Greeting detected for message: {message!r} — skipped advisory tools.",
+        "recommendations": [],
+        "tools_used": [],
+        "sources": {"agent": AGENT_NAME, "mode": "greeting", "intents": ["greeting"]},
+        "decision": None,
+        "limitations": "",
+        "confidence": "high",
+        "user_tier": tier,
+        "agent": AGENT_NAME,
+        "mode": "greeting",
+    }
+
+
 @router.post(
     "/chat",
-    summary="Farmer chat (tool-backed, pre-Gemini)",
-    response_description="Plain-language summary + reasoning from backend tools.",
+    summary="Oryx farmer chat (agentic Gemini + tools)",
+    response_description="Plain-language Oryx answer; online uses agentic tool-calling.",
 )
 def chat(body: ChatRequest) -> dict[str, Any]:
     """
-    Farmar Ask-tab endpoint.
+    Oryx Ask endpoint.
 
-    Runs core pasture/weather/grazing tools, then intent-routed tools
-    (stocking, year-over-year, tenure peers) so Lacuna + synthetic fields
-    answer the right farmer question.
+    Online + Gemini: Oryx decides which tools to call (pasture dataset, Open-Meteo, …).
+    Offline: local advisory dataset only.
     """
+    if is_greeting(body.message):
+        location, _ = _resolve_location(body)
+        return _greeting_response(
+            message=body.message,
+            location=location,
+            farmer_name=body.farmer_name,
+            user_tier=body.user_tier or "free",
+            is_guest=bool(body.is_guest),
+        )
+
     location, resolve_notes = _resolve_location(body)
     if not location:
         raise HTTPException(
@@ -168,8 +219,102 @@ def chat(body: ChatRequest) -> dict[str, Any]:
             ),
         )
 
+    online = is_online()
+    mode = "online" if online else "offline"
     animal = body.livestock_type or body.animal_type
     intents = detect_intents(body.message)
+    use_farm_tools = needs_farm_tools(body.message, intents)
+
+    # --- Online: Oryx agentically chooses tools ---
+    if online and gemini_configured():
+        oryx = run_vision_agent(
+            message=body.message,
+            location=location,
+            user_tier=body.user_tier or "free",
+            is_guest=bool(body.is_guest),
+            herd_size=body.herd_size,
+            livestock_type=animal,
+            farmer_name=body.farmer_name,
+            farm_name=body.farm_name,
+            land_tenure=body.land_tenure,
+            farm_size_ha=body.farm_size_ha,
+            history=body.history,
+            require_online=True,
+        )
+        if oryx:
+            advisor = {
+                "intents": intents,
+                "mode": mode,
+                "limitations": list(resolve_notes),
+                "tools_used": oryx.get("tools_used") or [],
+            }
+            return build_chat_response(
+                message=body.message,
+                location=location,
+                advisor=advisor,
+                user_tier=body.user_tier or "free",
+                is_guest=bool(body.is_guest),
+                herd_size=body.herd_size,
+                livestock_type=animal,
+                farm_notes=body.farm_notes,
+                farmer_name=body.farmer_name,
+                farm_name=body.farm_name,
+                land_tenure=body.land_tenure,
+                farm_size_ha=body.farm_size_ha,
+                vision_override=oryx,
+            )
+
+        if not use_farm_tools:
+            tier = "free" if body.is_guest else (
+                "premium"
+                if str(body.user_tier or "free").strip().lower() == "premium"
+                else "free"
+            )
+            return {
+                "response": (
+                    f"{AGENT_NAME} is online but the AI service is temporarily unavailable "
+                    "(quota or connection). Please try again in a minute.\n\n"
+                    "For farm advice from local data, ask about your pasture, rainfall, "
+                    "or stocking — e.g. “How is the pasture?”"
+                ),
+                "reasoning": f"Online basic question — {AGENT_NAME} unavailable; skipped local farm tools.",
+                "recommendations": [],
+                "tools_used": [],
+                "sources": {"agent": AGENT_NAME, "mode": "online", "intents": intents},
+                "decision": None,
+                "limitations": f"{AGENT_NAME} AI temporarily unavailable",
+                "confidence": "low",
+                "user_tier": tier,
+                "agent": AGENT_NAME,
+                "mode": "online",
+            }
+
+    # Offline basic questions: no Gemini, no invented farm card
+    if not online and not use_farm_tools:
+        tier = "free" if body.is_guest else (
+            "premium"
+            if str(body.user_tier or "free").strip().lower() == "premium"
+            else "free"
+        )
+        return {
+            "response": (
+                f"You're offline, so {AGENT_NAME} AI is unavailable for general questions.\n\n"
+                "I can still answer from the local rangeland dataset — try asking about "
+                "pasture condition, stocking, or whether to move the herd."
+            ),
+            "reasoning": "Offline basic question — local dataset reserved for farm asks.",
+            "recommendations": [],
+            "tools_used": [{"name": "local_dataset", "summary": "Offline — farm data only"}],
+            "sources": {"agent": "local-offline", "mode": "offline", "intents": intents},
+            "decision": None,
+            "limitations": f"Offline: general Q&A needs {AGENT_NAME} (online)",
+            "confidence": "low",
+            "user_tier": tier,
+            "agent": "local-offline",
+            "mode": "offline",
+        }
+
+    # --- Offline farm asks (or online farm asks after Gemini fail): local tools ---
     pasture_data = get_pasture_data(location)
     weather_data = get_weather(location)
     grazing = calculate_grazing_pressure(
@@ -218,10 +363,26 @@ def chat(body: ChatRequest) -> dict[str, Any]:
         tenure=tenure,
         scenario=scenario,
     )
+    if not online:
+        intent_paragraphs = [
+            f"You appear offline — this answer uses the local rangeland dataset only "
+            f"(no live weather, no {AGENT_NAME} AI)."
+        ] + list(intent_paragraphs)
+
+    mode_notes: list[str] = []
+    if online:
+        mode_notes.append(
+            f"Online, but {AGENT_NAME}/Gemini was unavailable — using local tools"
+        )
+    else:
+        mode_notes.append(
+            f"Offline mode: local advisory dataset only ({AGENT_NAME}/Gemini and live weather skipped)"
+        )
 
     limitations = list(
         dict.fromkeys(
             resolve_notes
+            + mode_notes
             + (pasture_data.get("limitations") or [])
             + (weather_data.get("limitations") or [])
             + (grazing.get("limitations") or [])
@@ -243,11 +404,13 @@ def chat(body: ChatRequest) -> dict[str, Any]:
         "intents": intents,
         "intent_paragraphs": intent_paragraphs,
         "limitations": limitations,
+        "mode": mode,
         "confidence": grazing.get("confidence")
         or pasture_data.get("confidence")
         or weather_data.get("confidence")
         or "low",
     }
+
     return build_chat_response(
         message=body.message,
         location=location,
@@ -261,6 +424,7 @@ def chat(body: ChatRequest) -> dict[str, Any]:
         farm_name=body.farm_name,
         land_tenure=body.land_tenure,
         farm_size_ha=body.farm_size_ha,
+        vision_override=None,
     )
 
 

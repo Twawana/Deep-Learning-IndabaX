@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import Card from "../components/Card";
+import PremiumCheckout from "../components/PremiumCheckout";
 import {
   LAND_TENURE_OPTIONS,
   LIVESTOCK_OPTIONS,
@@ -58,6 +59,7 @@ export default function Profile() {
   const [registerPassword, setRegisterPassword] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
 
   useEffect(() => {
     setForm(pickForm(farm));
@@ -159,15 +161,20 @@ export default function Profile() {
     setAuthBusy(false);
   };
 
-  const handleUpgrade = async () => {
+  const handleUpgrade = () => {
     if (!isLoggedIn) {
       setAuthMessage("Please log in before upgrading.");
       return;
     }
+    setCheckoutOpen(true);
+  };
+
+  const handleCheckoutConfirm = async (payment) => {
     setAuthBusy(true);
-    const result = await upgradePlan("premium");
+    const result = await upgradePlan("premium", payment);
     setAuthMessage(result.message);
     setAuthBusy(false);
+    return result;
   };
 
   const handleDowngrade = async () => {
@@ -272,7 +279,7 @@ export default function Profile() {
               {authMode === "login" ? (
                 <form onSubmit={handleLogin} className="space-y-2">
                   <p className="text-sm text-ink-muted">
-                    Log in to unlock full details, unlimited Ask, and Premium AI.
+                    Log in to unlock full details, unlimited Oryx, and Premium AI.
                   </p>
                   <div className="rounded-xl border border-dashed border-veld-200 bg-mist/80 px-3 py-2 text-[11px] leading-relaxed text-ink-muted">
                     Demo: <span className="font-semibold text-veld-800">farmer</span> /{" "}
@@ -316,7 +323,7 @@ export default function Profile() {
               ) : (
                 <form onSubmit={handleRegister} className="space-y-2">
                   <p className="text-sm text-ink-muted">
-                    Create a free account to keep your plan and unlock more Ask usage.
+                    Create a free account to keep your plan and unlock more Oryx usage.
                   </p>
                   <Field label="Your name" htmlFor="register-name">
                     <input
@@ -411,10 +418,10 @@ export default function Profile() {
             </p>
             <p className="mt-1 text-xs text-ink-muted">
               {!isLoggedIn
-                ? "Log in for unlimited short Ask. Upgrade to Premium for detailed grazing advice."
+                ? "Log in for unlimited short Oryx. Upgrade to Premium for detailed grazing advice."
                 : isPremium
                   ? "Full grazing insights, rainfall analysis, and stocking recommendations."
-                  : "Short basic answers only. Upgrade for detailed AI grazing advice."}
+                  : "Short basic answers only. Pay with a card to unlock detailed AI grazing advice (N$89/mo)."}
             </p>
           </div>
 
@@ -437,7 +444,7 @@ export default function Profile() {
               disabled={authBusy}
               className="w-full rounded-xl bg-veld-800 py-3 text-sm font-semibold text-white disabled:opacity-60"
             >
-              Upgrade to Premium
+              Upgrade to Premium — N$89/mo
             </button>
           ) : (
             <button
@@ -446,17 +453,25 @@ export default function Profile() {
               disabled={authBusy}
               className="w-full rounded-xl border border-veld-200 bg-white py-2.5 text-sm font-semibold text-veld-800 disabled:opacity-60"
             >
-              Switch back to Free
+              Cancel Premium / switch to Free
             </button>
           )}
 
           <ul className="space-y-1 text-xs text-ink-muted">
-            <li>• Guest: browse basics + limited Ask</li>
-            <li>• Free account: full metrics + unlimited short Ask</li>
-            <li>• Premium: detailed grazing, rainfall, and stocking advice</li>
+            <li>• Guest: browse basics + limited Oryx</li>
+            <li>• Free account: full metrics + unlimited short Oryx</li>
+            <li>• Premium (N$89/mo): detailed grazing, rainfall, and stocking advice</li>
           </ul>
         </div>
       </Card>
+
+      <PremiumCheckout
+        open={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        onConfirm={handleCheckoutConfirm}
+        busy={authBusy}
+        farmerName={form.farmerName || currentUser?.name || ""}
+      />
 
       <form onSubmit={handleSave} className="space-y-4">
         <Card title="About you">

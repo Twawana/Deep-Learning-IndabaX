@@ -1,7 +1,8 @@
 """
-Gemini-ready tool registry (descriptions + callables).
+Tool registry for Oryx (Gemini agentic tool-calling).
 
-Do NOT call Gemini from this module — only expose interfaces the agent can bind later.
+Exposes schemas + Python callables. The LLM decides which tools to invoke;
+this module does not call Gemini itself.
 """
 
 from __future__ import annotations

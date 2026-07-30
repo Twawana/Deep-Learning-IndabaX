@@ -113,7 +113,7 @@ export default function AdminPanel() {
         <div className="space-y-3">
           <ToggleRow
             label="Maintenance mode"
-            hint="Blocks Ask for non-admins. Shows a banner across the app."
+            hint="Blocks Oryx for non-admins. Shows a banner across the app."
             value={appSettings.maintenanceMode}
             onChange={(next) => handleSettingsToggle({ maintenanceMode: next })}
           />

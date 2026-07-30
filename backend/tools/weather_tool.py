@@ -10,12 +10,14 @@ from typing import Any
 
 from models.schemas import DailyWeather, RainfallSummary, WeatherResponse
 from services import dataset_service
+from services.connectivity import is_online
 from services.transparency import confidence_from_limitations, merge_limitations
 from services.weather_service import WeatherServiceError, fetch_forecast
 
 TOOL_DESCRIPTION = (
     "Retrieves rainfall and weather information for a Namibian location "
-    "using coordinates from the processed rangeland dataset and the Open-Meteo API."
+    "using coordinates from the processed rangeland dataset and the Open-Meteo API. "
+    "When offline, skips remote weather and returns a local-only stub."
 )
 
 
@@ -32,6 +34,9 @@ def get_weather(
 
     If latitude/longitude are provided (farmer GPS / town pin), those are preferred
     for Open-Meteo. Otherwise coordinates come from the matched dataset plots.
+
+    When the device/network looks offline, Open-Meteo is skipped so chat can
+    answer from the local advisory dataset only.
     """
     query = (location or "").strip()
     if not query:
@@ -86,6 +91,28 @@ def get_weather(
         use_lat = float(latitude)
         use_lon = float(longitude)
         coordinate_source = "farmer_gps_or_town_pin"
+
+    if not is_online():
+        offline = WeatherResponse(
+            found=False,
+            location=query,
+            matched_on=matched_on,
+            match_value=match_value,
+            site=meta.get("site"),
+            region=meta.get("region"),
+            latitude=use_lat,
+            longitude=use_lon,
+            message="Offline — live weather unavailable; using local pasture data only",
+            confidence="low",
+            limitations=[
+                "Device appears offline — Open-Meteo weather skipped",
+                "Advice is based on the local advisory dataset only",
+            ],
+            source="offline-local",
+        ).model_dump()
+        offline["coordinate_source"] = coordinate_source
+        offline["mode"] = "offline"
+        return offline
 
     limitations = [
         "Rainfall is from Open-Meteo model grids — not a farm rain gauge.",

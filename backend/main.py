@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from models.schemas import HealthResponse
-from routes import admin, advisor, compare, frontend_compat, pasture, scenarios, weather
+from routes import admin, advisor, compare, frontend_compat, pasture, scenarios, sync, weather
 from services import dataset_service
 from tools.registry import list_tool_manifests
 
@@ -34,8 +34,9 @@ app = FastAPI(
         "- `GET /compare` — compare two locations\n"
         "- `GET /tools` — Gemini-ready tool manifests\n\n"
         "### Farmar frontend adapters\n"
-        "- `POST /chat` — Ask-tab response shaped for the React app (pre-Gemini summary)\n"
+        "- `POST /chat` — Oryx agent (Gemini tool-calling) + Farmar response\n"
         "- `GET /dashboard` — Home screen aggregate\n"
+        "- `POST /sync/push` — device offline queue → Supabase PostgreSQL\n"
     ),
     version="0.3.0",
 )
@@ -60,6 +61,7 @@ app.include_router(compare.router)
 app.include_router(scenarios.router)
 app.include_router(frontend_compat.router)
 app.include_router(admin.router)
+app.include_router(sync.router)
 
 
 @app.get(

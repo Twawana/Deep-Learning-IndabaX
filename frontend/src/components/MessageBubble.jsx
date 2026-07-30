@@ -43,7 +43,7 @@ export default function MessageBubble({ message, onSpeak, isSpeaking }) {
           </div>
         )}
 
-        {!isUser && decision?.headline && (
+        {!isUser && decision?.headline && message.mode !== "greeting" && message.agent !== "Oryx" && (
           <p className={`mb-2 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${style.badge}`}>
             {style.emoji} {decision.headline}
           </p>
@@ -77,7 +77,10 @@ export default function MessageBubble({ message, onSpeak, isSpeaking }) {
           </ul>
         )}
 
-        {!isUser && decision?.explainer?.checks?.length > 0 && (
+        {!isUser &&
+          decision?.explainer?.checks?.length > 0 &&
+          message.mode !== "greeting" &&
+          message.agent !== "Oryx" && (
           <div className="mt-2.5 border-t border-veld-100 pt-2">
             <p className="text-[11px] font-semibold text-veld-800">
               Why this recommendation?

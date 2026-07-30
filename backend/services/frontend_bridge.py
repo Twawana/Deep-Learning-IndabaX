@@ -1,8 +1,8 @@
 """
 Build farmer-facing chat / dashboard payloads from existing tool outputs.
 
-No Gemini yet — deterministic summaries from measured data + grazing assessment.
-Respects FREE vs PREMIUM response depth.
+Oryx (Gemini) may supply farmer-facing prose; otherwise deterministic summaries
+from measured data + grazing assessment. Respects FREE vs PREMIUM response depth.
 """
 
 from __future__ import annotations
@@ -267,8 +267,9 @@ def build_chat_response(
     farm_name: Optional[str] = None,
     land_tenure: Optional[str] = None,
     farm_size_ha: Optional[float] = None,
+    vision_override: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
-    """Shape POST /chat response expected by the Farmar frontend (pre-Gemini)."""
+    """Shape POST /chat response expected by the Farmar frontend (Oryx / tool-backed)."""
     from services.decision_service import advisor_prose_from_decision, build_decision
 
     # Guests never get premium depth, even if a bad client sends premium.
@@ -307,26 +308,50 @@ def build_chat_response(
         if scenario.get("parsed"):
             decision["parsed_assumptions"] = scenario["parsed"].get("assumptions")
 
-    if scenario.get("found") and scenario.get("farmer_summary"):
+    vision_text = (vision_override or {}).get("response")
+    vision_reasoning = (vision_override or {}).get("reasoning")
+    vision_model = (vision_override or {}).get("model")
+    vision_tools = (vision_override or {}).get("tools_used") or []
+    data_mode = (vision_override or {}).get("mode") or advisor.get("mode") or "online"
+    agent_label = (
+        (vision_override or {}).get("agent")
+        or ("Oryx" if vision_text else ("local-offline" if data_mode == "offline" else "tools"))
+    )
+
+    if vision_text:
+        prose = vision_text
+        # Gemini answers are chat replies — skip the Monitor Closely decision card.
+        decision = None
+        recommendations = []
+        explainer = {}
+    elif scenario.get("found") and scenario.get("farmer_summary"):
         prose = scenario["farmer_summary"]
+        explainer = decision.get("explainer") or {}
+        recommendations = list(
+            dict.fromkeys(
+                [decision.get("recommended_action")]
+                + list(explainer.get("monitor_next") or [])
+                + (grazing.get("signals") or [])[:2]
+            )
+        )
+        recommendations = [r for r in recommendations if r]
     else:
         prose = advisor_prose_from_decision(
             decision=decision, location=location, message=message
         )
         if intent_paragraphs:
             prose = prose + "\n\n" + "\n\n".join(intent_paragraphs)
-
-    explainer = decision.get("explainer") or {}
-    recommendations = list(
-        dict.fromkeys(
-            [decision.get("recommended_action")]
-            + list(explainer.get("monitor_next") or [])
-            + (grazing.get("signals") or [])[:2]
+        explainer = decision.get("explainer") or {}
+        recommendations = list(
+            dict.fromkeys(
+                [decision.get("recommended_action")]
+                + list(explainer.get("monitor_next") or [])
+                + (grazing.get("signals") or [])[:2]
+            )
         )
-    )
-    recommendations = [r for r in recommendations if r]
+        recommendations = [r for r in recommendations if r]
 
-    if b2b:
+    if b2b and not vision_text:
         prose = (
             f"Regional / extension view for {location}:\n\n" + prose + "\n\n"
             "At regional level, prioritize camps with weaker cover and coordinate "
@@ -335,7 +360,11 @@ def build_chat_response(
 
     if tier == "free":
         cta = GUEST_LOGIN_CTA if is_guest else FREE_UPGRADE_CTA
-        if scenario.get("found") and scenario.get("farmer_summary"):
+        if vision_text:
+            short = vision_text
+            if FREE_UPGRADE_CTA not in short and GUEST_LOGIN_CTA not in short:
+                short = f"{short.rstrip()}\n\n{cta}"
+        elif scenario.get("found") and scenario.get("farmer_summary"):
             short = f"{scenario['farmer_summary']}\n\n{cta}"
         else:
             extra = ("\n\n" + intent_paragraphs[0]) if intent_paragraphs else ""
@@ -345,10 +374,32 @@ def build_chat_response(
                 f"{extra}\n\n"
                 f"{cta}"
             )
-        tools_used = [
-            {"name": "get_pasture_data", "summary": f"Pasture lookup for {location}"},
-            {"name": "get_weather", "summary": f"Weather context for {location}"},
-        ]
+        tools_used = []
+        if vision_model:
+            tools_used.append(
+                {"name": "Oryx", "summary": f"Gemini agentic ({vision_model})"}
+            )
+        for t in vision_tools:
+            if isinstance(t, dict) and t.get("name"):
+                tools_used.append(t)
+        if not vision_text and pasture_data:
+            tools_used.append(
+                {
+                    "name": "get_pasture_data",
+                    "summary": f"Local pasture lookup for {location}",
+                }
+            )
+        if not vision_text and weather_data and data_mode == "online":
+            tools_used.append(
+                {"name": "get_weather", "summary": f"Weather context for {location}"}
+            )
+        elif data_mode == "offline" and not vision_text:
+            tools_used.append(
+                {
+                    "name": "local_dataset",
+                    "summary": "Offline — local advisory dataset only (no live weather)",
+                }
+            )
         if scenario.get("found"):
             tools_used.append(
                 {"name": "run_what_if_scenario", "summary": "Compared current vs what-if"}
@@ -360,25 +411,36 @@ def build_chat_response(
         sources = {
             "scenario": scenario or None,
             "intents": intents,
-        } if scenario.get("found") else None
-        decision_out = {
-            "action_priority": decision.get("action_priority"),
-            "headline": decision.get("headline"),
-            "recommended_action": decision.get("recommended_action"),
-            "explainer": {
-                "what": explainer.get("what"),
-                "why": (explainer.get("why") or [])[:2],
-                "checks": explainer.get("checks"),
-            },
-            "confidence": decision.get("confidence"),
-            "what_changed": scenario.get("what_changed") if scenario else None,
-        }
+            "agent": agent_label,
+            "mode": data_mode,
+        } if scenario.get("found") or vision_text or data_mode == "offline" else None
+        decision_out = None
+        if decision and not vision_text:
+            decision_out = {
+                "action_priority": decision.get("action_priority"),
+                "headline": decision.get("headline"),
+                "recommended_action": decision.get("recommended_action"),
+                "explainer": {
+                    "what": explainer.get("what"),
+                    "why": (explainer.get("why") or [])[:2],
+                    "checks": explainer.get("checks"),
+                },
+                "confidence": decision.get("confidence"),
+                "what_changed": scenario.get("what_changed") if scenario else None,
+            }
         limitations = [
             "Free plan: short guidance only.",
             "Detailed metrics, timeline, and full evidence are available on Premium.",
         ]
-        reasoning = (
-            "Short free-tier guidance from pasture, weather, and intent-routed dataset tools."
+        if data_mode == "offline":
+            limitations.insert(
+                0,
+                "Offline: local dataset only — Oryx AI and live weather unavailable.",
+            )
+        reasoning = vision_reasoning or (
+            "Offline local-dataset guidance."
+            if data_mode == "offline"
+            else "Short free-tier guidance from pasture, weather, and intent-routed dataset tools."
         )
         return {
             "response": short,
@@ -390,27 +452,55 @@ def build_chat_response(
             "limitations": "; ".join(limitations),
             "confidence": advisor.get("confidence") or "low",
             "user_tier": tier,
+            "agent": agent_label,
+            "mode": data_mode,
         }
 
     # Premium: natural prose + full decision + evidence
-    if herd_size is None:
-        prose += (
-            "\n\nHerd size was not set in your profile — advice is stronger once you add it."
-        )
-    if farm_size_ha is None and pasture_ui.get("carrying_capacity") is not None:
-        prose += (
-            "\n\nAdd farm/camp size (hectares) in Profile to turn carrying capacity "
-            "into a safe head-count for your herd."
-        )
+    if not vision_text:
+        if herd_size is None:
+            prose += (
+                "\n\nHerd size was not set in your profile — advice is stronger once you add it."
+            )
+        if farm_size_ha is None and pasture_ui.get("carrying_capacity") is not None:
+            prose += (
+                "\n\nAdd farm/camp size (hectares) in Profile to turn carrying capacity "
+                "into a safe head-count for your herd."
+            )
 
-    tools_used = [
-        {"name": "get_pasture_data", "summary": f"Pasture lookup for {location}"},
-        {"name": "get_weather", "summary": f"Open-Meteo rainfall/forecast for {location}"},
-        {
-            "name": "calculate_grazing_pressure",
-            "summary": f"Grazing assessment risk={grazing.get('grazing_risk')}",
-        },
-    ]
+    tools_used = []
+    if vision_model:
+        tools_used.append(
+            {"name": "Oryx", "summary": f"Gemini agentic ({vision_model})"}
+        )
+    for t in vision_tools:
+        if isinstance(t, dict) and t.get("name"):
+            tools_used.append(t)
+    if not vision_text and pasture_data:
+        tools_used.append(
+            {"name": "get_pasture_data", "summary": f"Local pasture lookup for {location}"}
+        )
+        if grazing:
+            tools_used.append(
+                {
+                    "name": "calculate_grazing_pressure",
+                    "summary": f"Grazing assessment risk={grazing.get('grazing_risk')}",
+                }
+            )
+    if not vision_text and weather_data and data_mode == "online" and pasture_data:
+        tools_used.append(
+            {
+                "name": "get_weather",
+                "summary": f"Open-Meteo rainfall/forecast for {location}",
+            }
+        )
+    elif data_mode == "offline" and not vision_text:
+        tools_used.append(
+            {
+                "name": "local_dataset",
+                "summary": "Offline — local advisory dataset only (no live weather)",
+            }
+        )
     if scenario.get("found"):
         tools_used.append(
             {
@@ -431,15 +521,17 @@ def build_chat_response(
         tools_used.append({"name": "compare_tenure_nearby", "summary": "Tenure peer compare"})
 
     sources = {
-        "pasture": pasture_ui,
-        "weather": weather_ui,
-        "grazing_assessment": grazing,
+        "pasture": pasture_ui if pasture_data else None,
+        "weather": weather_ui if weather_data else None,
+        "grazing_assessment": grazing or None,
         "stocking": stocking or None,
         "year_over_year": yoy or None,
         "tenure_peers": tenure or None,
         "scenario": scenario or None,
         "decision": decision,
         "intents": intents,
+        "agent": agent_label,
+        "mode": data_mode,
     }
     capacity_note = (
         "Carrying capacity (ha/LSU) used from synthetic / nearby sites."
@@ -449,35 +541,45 @@ def build_chat_response(
     limitations = list(
         dict.fromkeys(
             (advisor.get("limitations") or [])
-            + [
-                capacity_note,
-                "Always verify conditions on the ground before moving animals.",
-            ]
+            + (
+                [
+                    capacity_note,
+                    "Always verify conditions on the ground before moving animals.",
+                ]
+                if not vision_text
+                else []
+            )
         )
     )
-    reasoning = (
-        f"Question: {message}\n"
-        f"Intents: {', '.join(intents) if intents else 'general'}\n"
-        f"Location: {location}\n"
-        f"Action: {decision.get('action_priority')} ({decision.get('headline')})\n"
-        f"Herd size: {herd_size if herd_size is not None else 'not provided'}\n"
-        f"Farm size ha: {farm_size_ha if farm_size_ha is not None else 'not provided'}\n"
-        f"Land tenure: {land_tenure or 'unknown'}\n"
-        f"Pasture found={pasture_data.get('found')}, confidence={pasture_data.get('confidence')}\n"
-        f"Weather found={weather_data.get('found')}, confidence={weather_data.get('confidence')}\n"
-        f"Grazing risk={grazing.get('grazing_risk')}, confidence={grazing.get('confidence')}\n"
-        f"Capacity ha/LSU={pasture_ui.get('carrying_capacity')}\n"
-        f"B2B context={'yes' if b2b else 'no'}"
-    )
+    if decision:
+        reasoning = vision_reasoning or (
+            f"Question: {message}\n"
+            f"Mode: {data_mode}\n"
+            f"Intents: {', '.join(intents) if intents else 'general'}\n"
+            f"Location: {location}\n"
+            f"Action: {decision.get('action_priority')} ({decision.get('headline')})\n"
+            f"Herd size: {herd_size if herd_size is not None else 'not provided'}\n"
+            f"Farm size ha: {farm_size_ha if farm_size_ha is not None else 'not provided'}\n"
+            f"Land tenure: {land_tenure or 'unknown'}\n"
+            f"Pasture found={pasture_data.get('found')}, confidence={pasture_data.get('confidence')}\n"
+            f"Weather found={weather_data.get('found')}, confidence={weather_data.get('confidence')}\n"
+            f"Grazing risk={grazing.get('grazing_risk')}, confidence={grazing.get('confidence')}\n"
+            f"Capacity ha/LSU={pasture_ui.get('carrying_capacity')}\n"
+            f"B2B context={'yes' if b2b else 'no'}"
+        )
+    else:
+        reasoning = vision_reasoning or f"Oryx reply for: {message}"
 
     return {
         "response": prose,
         "reasoning": reasoning,
-        "recommendations": recommendations[:5],
+        "recommendations": recommendations[:5] if recommendations else [],
         "tools_used": tools_used,
         "sources": sources,
         "decision": decision,
         "limitations": "; ".join(limitations) if isinstance(limitations, list) else str(limitations),
-        "confidence": advisor.get("confidence") or "low",
+        "confidence": advisor.get("confidence") or ("medium" if vision_text else "low"),
         "user_tier": tier,
+        "agent": agent_label,
+        "mode": data_mode,
     }

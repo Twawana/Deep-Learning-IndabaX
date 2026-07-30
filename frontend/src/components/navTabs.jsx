@@ -10,7 +10,7 @@ export const NAV_TABS = [
   },
   {
     to: "/chat",
-    label: "Ask",
+    label: "Oryx",
     match: (path) => path.startsWith("/chat"),
     icon: AskIcon,
   },
