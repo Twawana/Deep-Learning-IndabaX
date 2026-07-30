@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import Card from "../components/Card";
 import {
   LAND_TENURE_OPTIONS,
@@ -7,6 +8,7 @@ import {
   WATER_SOURCE_OPTIONS,
 } from "../utils/constants";
 import { useFarmContext } from "../context/FarmContext";
+import { useAuth } from "../context/AuthContext";
 
 const FORM_KEYS = [
   "farmerName",
@@ -34,8 +36,13 @@ function pickForm(farm) {
 
 export default function Profile() {
   const farm = useFarmContext();
+  const { currentUser, users, isAdmin, loginAsUser, loginAsAdmin, logout, source } =
+    useAuth();
   const [form, setForm] = useState(() => pickForm(farm));
   const [saved, setSaved] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState(currentUser.id);
+  const [adminPasscode, setAdminPasscode] = useState("");
+  const [authMessage, setAuthMessage] = useState("");
 
   useEffect(() => {
     setForm(pickForm(farm));
@@ -55,6 +62,10 @@ export default function Profile() {
     farm.waterSource,
     farm.farmNotes,
   ]);
+
+  useEffect(() => {
+    setSelectedUserId(currentUser.id);
+  }, [currentUser.id]);
 
   const setField = (key, value) => {
     setSaved(false);
@@ -102,6 +113,23 @@ export default function Profile() {
     setSaved(false);
   };
 
+  const handleSwitchUser = async () => {
+    const result = await loginAsUser(selectedUserId);
+    setAuthMessage(result.message);
+  };
+
+  const handleAdminLogin = async (event) => {
+    event.preventDefault();
+    const result = await loginAsAdmin(adminPasscode);
+    setAuthMessage(result.message);
+    if (result.ok) setAdminPasscode("");
+  };
+
+  const handleLogout = async () => {
+    const result = await logout();
+    setAuthMessage(result.message);
+  };
+
   const initials = (form.farmerName || form.farmName || "F")
     .split(" ")
     .filter(Boolean)
@@ -131,6 +159,88 @@ export default function Profile() {
               {form.herdSize ? ` · ${form.herdSize} head` : ""}
             </p>
           </div>
+        </div>
+      </Card>
+
+      <Card title="Account access">
+        <div className="space-y-3">
+          <div className="rounded-xl border border-veld-100 bg-mist px-3 py-2.5">
+            <p className="text-sm font-semibold text-ink">{currentUser.name}</p>
+            <p className="text-xs text-ink-muted">
+              {currentUser.email} · {currentUser.role === "admin" ? "Admin" : "User"}
+            </p>
+            <p className="mt-1 text-[11px] text-ink-muted">
+              Auth source: {source === "backend" ? "Backend API" : "Local cache"}
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="account-switch" className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+              Switch or login
+            </label>
+            <select
+              id="account-switch"
+              value={selectedUserId}
+              onChange={(e) => setSelectedUserId(e.target.value)}
+              className="field-input"
+            >
+              {users
+                .filter((user) => user.status === "active")
+                .map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.name} ({user.role})
+                  </option>
+                ))}
+            </select>
+            <button
+              type="button"
+              onClick={handleSwitchUser}
+              className="w-full rounded-xl border border-veld-200 bg-white py-2.5 text-sm font-semibold text-veld-800"
+            >
+              Switch account
+            </button>
+          </div>
+
+          <form onSubmit={handleAdminLogin} className="space-y-2">
+            <label htmlFor="admin-passcode" className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
+              Login as admin
+            </label>
+            <input
+              id="admin-passcode"
+              type="password"
+              value={adminPasscode}
+              onChange={(e) => setAdminPasscode(e.target.value)}
+              placeholder="Enter admin passcode"
+              className="field-input"
+            />
+            <button
+              type="submit"
+              className="w-full rounded-xl bg-veld-800 py-2.5 text-sm font-semibold text-white"
+            >
+              Login as admin
+            </button>
+          </form>
+
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="w-full py-1.5 text-xs font-semibold text-ink-muted"
+          >
+            Logout to default user
+          </button>
+
+          {isAdmin ? (
+            <Link
+              to="/admin"
+              className="block w-full rounded-xl border border-veld-200 bg-sun-100 py-2.5 text-center text-sm font-semibold text-sun-600"
+            >
+              Open admin panel
+            </Link>
+          ) : null}
+
+          {authMessage ? (
+            <p className="text-xs font-medium text-veld-700">{authMessage}</p>
+          ) : null}
         </div>
       </Card>
 

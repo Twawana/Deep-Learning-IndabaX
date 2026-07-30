@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from models.schemas import HealthResponse
-from routes import advisor, compare, frontend_compat, pasture, weather
+from routes import admin, advisor, compare, frontend_compat, pasture, weather
 from services import dataset_service
 from tools.registry import list_tool_manifests
 
@@ -58,6 +58,7 @@ app.include_router(weather.router)
 app.include_router(advisor.router)
 app.include_router(compare.router)
 app.include_router(frontend_compat.router)
+app.include_router(admin.router)
 
 
 @app.get(

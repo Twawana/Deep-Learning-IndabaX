@@ -27,6 +27,10 @@ const SCREENS = {
     hint: (farm) =>
       farm.farmName || farm.farmerName || farm.customLocation || "Your farm details",
   },
+  "/admin": {
+    title: "Admin",
+    hint: () => "Manage users and app controls",
+  },
 };
 
 export default function AppHeader({ action }) {

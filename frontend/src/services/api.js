@@ -179,4 +179,44 @@ export async function getAdvisorContext(payload) {
   return data;
 }
 
+export async function getAdminState() {
+  const { data } = await api.get("/admin/state");
+  return data;
+}
+
+export async function loginAdmin(passcode) {
+  const { data } = await api.post("/admin/login", { passcode });
+  return data;
+}
+
+export async function switchAccount(userId) {
+  const { data } = await api.post("/admin/switch", { user_id: userId });
+  return data;
+}
+
+export async function logoutAccount() {
+  const { data } = await api.post("/admin/logout");
+  return data;
+}
+
+export async function createUser(payload) {
+  const { data } = await api.post("/admin/users", payload);
+  return data;
+}
+
+export async function patchUser(userId, patch) {
+  const { data } = await api.patch(`/admin/users/${encodeURIComponent(userId)}`, patch);
+  return data;
+}
+
+export async function deleteUser(userId) {
+  const { data } = await api.delete(`/admin/users/${encodeURIComponent(userId)}`);
+  return data;
+}
+
+export async function patchAdminSettings(patch) {
+  const { data } = await api.patch("/admin/settings", patch);
+  return data;
+}
+
 export default api;

@@ -5,6 +5,7 @@ import Chat from "./pages/Chat";
 import Pasture from "./pages/Pasture";
 import Weather from "./pages/Weather";
 import Profile from "./pages/Profile";
+import AdminPanel from "./pages/AdminPanel";
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
           <Route path="pasture" element={<Pasture />} />
           <Route path="weather" element={<Weather />} />
           <Route path="profile" element={<Profile />} />
+          <Route path="admin" element={<AdminPanel />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
