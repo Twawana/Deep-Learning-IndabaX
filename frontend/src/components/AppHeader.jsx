@@ -16,8 +16,7 @@ const SCREENS = {
   },
   "/pasture": {
     title: "Pasture",
-    hint: (farm) =>
-      `${farm.region || "Your region"}${farm.campName ? ` · ${farm.campName}` : ""}`,
+    hint: (farm) => farm.location,
   },
   "/weather": {
     title: "Weather",

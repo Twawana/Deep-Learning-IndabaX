@@ -4,6 +4,14 @@ import { toArray } from "../utils/format";
 export default function MessageBubble({ message, onSpeak, isSpeaking }) {
   const isUser = message.role === "user";
   const recommendations = toArray(message.recommendations);
+  const toolsUsed = toArray(message.tools_used);
+  const limitations =
+    typeof message.limitations === "string"
+      ? message.limitations
+          .split(";")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : toArray(message.limitations);
   const [showWhy, setShowWhy] = useState(false);
 
   return (
@@ -19,9 +27,11 @@ export default function MessageBubble({ message, onSpeak, isSpeaking }) {
           <div className="mb-1 flex justify-end">
             <button
               type="button"
-              onClick={() => onSpeak(message.content)}
-              className="text-[11px] font-semibold text-veld-600"
-              aria-label="Speak response"
+              onClick={onSpeak}
+              className={`text-[11px] font-semibold ${
+                isSpeaking ? "text-danger" : "text-veld-600"
+              }`}
+              aria-label={isSpeaking ? "Stop speaking" : "Listen to response"}
             >
               {isSpeaking ? "Stop" : "Listen"}
             </button>
@@ -41,6 +51,25 @@ export default function MessageBubble({ message, onSpeak, isSpeaking }) {
               >
                 <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-sun-500" />
                 <span>{typeof item === "string" ? item : String(item)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {!isUser && toolsUsed.length > 0 && (
+          <p className="mt-2 text-[11px] text-ink-muted">
+            Tools: {toolsUsed.map((t) => (typeof t === "string" ? t : t?.name || String(t))).join(", ")}
+          </p>
+        )}
+
+        {!isUser && limitations.length > 0 && (
+          <ul className="mt-2 space-y-1 border-t border-veld-100 pt-2">
+            {limitations.map((item, index) => (
+              <li
+                key={`${message.id}-lim-${index}`}
+                className="text-[11px] leading-relaxed text-ink-muted"
+              >
+                {typeof item === "string" ? item : String(item)}
               </li>
             ))}
           </ul>

@@ -182,7 +182,11 @@ export default function Profile() {
               >
                 {NAMIBIA_LOCATIONS.map((loc) => (
                   <option key={loc.name} value={loc.name}>
-                    {loc.name} ({loc.region})
+                    {loc.name}
+                    {loc.mapsTo && loc.mapsTo !== loc.name
+                      ? ` → ${loc.mapsTo}`
+                      : ""}{" "}
+                    ({loc.region})
                   </option>
                 ))}
               </select>
@@ -201,7 +205,7 @@ export default function Profile() {
             </Field>
 
             <Field
-              label="Area description"
+              label="Area notes (not used for data lookup)"
               htmlFor="profile-custom-location"
             >
               <input
@@ -209,9 +213,12 @@ export default function Profile() {
                 type="text"
                 value={form.customLocation}
                 onChange={(e) => setField("customLocation", e.target.value)}
-                placeholder="e.g. 20km east of Otjiwarongo"
+                placeholder="Optional notes, e.g. 20km east of town"
                 className="field-input"
               />
+              <p className="mt-1 text-[11px] text-ink-muted">
+                Pasture data uses the town/site above. Free text here is notes only.
+              </p>
             </Field>
           </div>
         </Card>

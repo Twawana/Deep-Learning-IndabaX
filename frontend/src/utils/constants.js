@@ -1,21 +1,46 @@
 export const API_BASE =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
+/**
+ * Only towns/sites that resolve in the processed Lacuna advisory dataset
+ * (exact site or PLACE_ALIASES on the backend).
+ */
 export const NAMIBIA_LOCATIONS = [
-  { name: "Windhoek", region: "Khomas", lat: -22.57, lon: 17.08 },
-  { name: "Oshakati", region: "Oshana", lat: -17.78, lon: 15.7 },
-  { name: "Swakopmund", region: "Erongo", lat: -22.68, lon: 14.53 },
-  { name: "Rundu", region: "Kavango East", lat: -17.93, lon: 19.77 },
-  { name: "Katima Mulilo", region: "Zambezi", lat: -17.5, lon: 24.27 },
-  { name: "Otjiwarongo", region: "Otjozondjupa", lat: -20.46, lon: 16.65 },
-  { name: "Keetmanshoop", region: "ǁKaras", lat: -26.58, lon: 18.13 },
-  { name: "Gobabis", region: "Omaheke", lat: -22.45, lon: 18.97 },
-  { name: "Mariental", region: "Hardap", lat: -24.63, lon: 17.97 },
-  { name: "Outjo", region: "Kunene", lat: -20.12, lon: 16.15 },
-  { name: "Tsumeb", region: "Oshikoto", lat: -19.25, lon: 17.72 },
-  { name: "Grootfontein", region: "Otjozondjupa", lat: -19.57, lon: 18.12 },
-  { name: "Walvis Bay", region: "Erongo", lat: -22.96, lon: 14.51 },
-  { name: "Okahandja", region: "Otjozondjupa", lat: -21.98, lon: 16.91 },
+  { name: "Gobabis", region: "Omaheke", lat: -22.45, lon: 18.97, mapsTo: "Molly", supported: true },
+  { name: "Molly", region: "Central Kalahari", lat: -22.46, lon: 19.75, mapsTo: "Molly", supported: true },
+  { name: "Cala", region: "Central Kalahari", lat: -21.41, lon: 18.33, mapsTo: "Cala", supported: true },
+  { name: "Windhoek", region: "Khomas", lat: -22.57, lon: 17.08, mapsTo: "Neudamm", supported: true },
+  { name: "Neudamm", region: "Highland shrubland", lat: -22.5, lon: 17.37, mapsTo: "Neudamm", supported: true },
+  { name: "Otjiwarongo", region: "Otjozondjupa", lat: -20.46, lon: 16.65, mapsTo: "Lardner", supported: true },
+  { name: "Outjo", region: "Kunene", lat: -20.12, lon: 16.15, mapsTo: "Ghaub", supported: true },
+  { name: "Ghaub", region: "Karstveld", lat: -19.45, lon: 17.78, mapsTo: "Ghaub", supported: true },
+  { name: "Keetmanshoop", region: "ǁKaras", lat: -26.58, lon: 18.13, mapsTo: "Keetmanshop", supported: true },
+  { name: "Katima Mulilo", region: "Zambezi", lat: -17.5, lon: 24.27, mapsTo: "Katima Mulilo Quarantine Station", supported: true },
+  { name: "Okongo", region: "Ohangwena", lat: -17.52, lon: 17.77, mapsTo: "Okongo", supported: true },
+  { name: "Agagia", region: "Thornbush shrubland", lat: -21.56, lon: 17.25, mapsTo: "Agagia", supported: true },
+  { name: "Beulah", region: "Karstveld", lat: -19.63, lon: 14.89, mapsTo: "Beulah", supported: true },
+  { name: "Lardner", region: "Thornbush shrubland", lat: -19.98, lon: 17.03, mapsTo: "Lardner", supported: true },
+  { name: "Ogongo", region: "Cuvelai/Western Kalahari", lat: -17.68, lon: 15.31, mapsTo: "Ogongo", supported: true },
+  { name: "Okahambo", region: "Northern Kalahari", lat: -20.86, lon: 19.23, mapsTo: "Okahambo", supported: true },
+  { name: "Okarandu", region: "Western highland", lat: -21.34, lon: 15.59, mapsTo: "Okarandu", supported: true },
+  { name: "Onamundidi", region: "Northeastern Kalahari woodland/Cuvelai", lat: -17.51, lon: 16.56, mapsTo: "Onamundidi", supported: true },
+  { name: "Olifantswater West", region: "Southern Kalahari", lat: -23.66, lon: 18.37, mapsTo: "Olifantswater West", supported: true },
+  { name: "Suederecke", region: "Dwarf Shrub Savvanah", lat: -25.64, lon: 17.3, mapsTo: "Suederecke", supported: true },
+  { name: "Tiras", region: "Desert - Dwarf Shrub Transition", lat: -26.14, lon: 16.57, mapsTo: "Tiras", supported: true },
+  { name: "Uukolonkadhi", region: "Western highland/Western Kalahari", lat: -17.66, lon: 14.31, mapsTo: "Uukolonkadhi", supported: true },
+  { name: "Buschpfanne", region: "Dwarf shrub-southern Kalahari transition", lat: -26.84, lon: 19.78, mapsTo: "Buschpfanne", supported: true },
+];
+
+/** Unsupported picker entries kept only for messaging / future aliases */
+export const UNSUPPORTED_LOCATIONS = [
+  "Oshakati",
+  "Swakopmund",
+  "Rundu",
+  "Mariental",
+  "Tsumeb",
+  "Grootfontein",
+  "Walvis Bay",
+  "Okahandja",
 ];
 
 export const LAND_TENURE_OPTIONS = [
@@ -44,21 +69,21 @@ export const WATER_SOURCE_OPTIONS = [
 ];
 
 export const CHAT_SUGGESTIONS = [
-  "Is this camp overgrazed?",
-  "What's a safe stocking rate right now?",
-  "Should I move my herd?",
+  "Can my cattle stay here another week?",
+  "How is pasture looking around Gobabis?",
+  "Will rainfall help my grazing situation?",
 ];
 
 export const DEFAULT_FARM_CONTEXT = {
   farmerName: "",
   farmName: "",
   phone: "",
-  location: "Windhoek",
-  region: "Khomas",
+  location: "Gobabis",
+  region: "Omaheke",
   village: "",
   customLocation: "",
-  lat: -22.57,
-  lon: 17.08,
+  lat: -22.45,
+  lon: 18.97,
   herdSize: 50,
   livestockType: "cattle",
   campName: "",
@@ -71,3 +96,7 @@ export const DEFAULT_FARM_CONTEXT = {
 
 export const FARM_STORAGE_KEY = "farmar-profile-v2";
 
+/** Dataset lookup key: always the selected town/site, never free-text notes. */
+export function datasetLocation(farm) {
+  return (farm?.location || "").trim();
+}

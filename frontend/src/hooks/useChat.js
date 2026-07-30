@@ -1,7 +1,14 @@
 import { useCallback, useState } from "react";
 import { sendMessage } from "../services/api";
+import { datasetLocation } from "../utils/constants";
 import { getErrorMessage } from "../utils/format";
 import { useFarmContext } from "../context/FarmContext";
+
+function toOptionalInt(value) {
+  if (value === "" || value === null || value === undefined) return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
 
 export function useChat() {
   const farm = useFarmContext();
@@ -16,6 +23,12 @@ export function useChat() {
     async (text) => {
       const trimmed = text.trim();
       if (!trimmed || isLoading) return null;
+
+      const location = datasetLocation(farm);
+      if (!location) {
+        setError("Set a supported town or research site in your profile first.");
+        return null;
+      }
 
       const userMessage = {
         id: `user-${Date.now()}`,
@@ -36,21 +49,22 @@ export function useChat() {
       try {
         const data = await sendMessage({
           message: trimmed,
+          // nearest_town = picker; location free-text is notes only (not used for dataset key)
+          nearest_town: location,
+          location: location,
+          region: farm.region,
+          village: farm.village || undefined,
           farmer_name: farm.farmerName || undefined,
           farm_name: farm.farmName || undefined,
           phone: farm.phone || undefined,
-          location: farm.customLocation || farm.location,
-          nearest_town: farm.location,
-          region: farm.region,
-          village: farm.village || undefined,
-          herd_size: Number(farm.herdSize) || undefined,
+          herd_size: toOptionalInt(farm.herdSize),
           livestock_type: farm.livestockType || undefined,
           camp_name: farm.campName || undefined,
-          number_of_camps: Number(farm.numberOfCamps) || undefined,
-          farm_size_ha: Number(farm.farmSizeHa) || undefined,
+          number_of_camps: toOptionalInt(farm.numberOfCamps),
+          farm_size_ha: toOptionalInt(farm.farmSizeHa),
           land_tenure: farm.landTenure,
           water_source: farm.waterSource || undefined,
-          farm_notes: farm.farmNotes || undefined,
+          farm_notes: [farm.farmNotes, farm.customLocation].filter(Boolean).join(" | ") || undefined,
           lat: Number(farm.lat),
           lon: Number(farm.lon),
           history,

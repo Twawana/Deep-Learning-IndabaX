@@ -1,28 +1,30 @@
 import { formatLabel, formatValue } from "../utils/format";
 
 const PASTURE_FIELDS = [
+  "vegetation_cover",
+  "bush_encroachment",
+  "biomass",
+  "grass_biomass",
+  "cover_perennial_grass_pct",
+  "cover_bare_ground_pct",
+  "grazing_pressure",
+  "observation_date",
+  "confidence",
+  "condition",
   "soil_quality",
   "grass_type",
-  "condition",
-  "ndvi",
-  "vegetation_cover",
-  "grass_biomass",
-  "bush_biomass",
-  "bush_encroachment",
-  "livestock_density",
   "carrying_capacity",
-  "grazing_pressure",
-  "browsing_pressure",
-  "land_tenure",
+  "ndvi",
   "region",
 ];
 
 const WEATHER_FIELDS = [
   "temperature",
   "rainfall",
-  "humidity",
+  "rainfall_last_7_days",
+  "forecast_total_mm",
   "recent_rainfall_mm",
-  "rainfall_last_30_days",
+  "humidity",
   "drought_indicator",
   "source",
 ];

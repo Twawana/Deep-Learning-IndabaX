@@ -6,7 +6,14 @@ export function getErrorMessage(error, fallback = "Something went wrong.") {
   if (error.response?.data) {
     const data = error.response.data;
     if (typeof data === "string") return data;
-    if (data.detail) return data.detail;
+    if (data.detail) {
+      if (typeof data.detail === "string") return data.detail;
+      if (Array.isArray(data.detail)) {
+        return data.detail
+          .map((item) => item.msg || item.message || JSON.stringify(item))
+          .join("; ");
+      }
+    }
     if (data.message) return data.message;
     if (data.error) return data.error;
   }
@@ -31,7 +38,15 @@ export function formatValue(value, fallback = "—") {
   return String(value);
 }
 
+const LABEL_OVERRIDES = {
+  rainfall: "Near-term rain",
+  rainfall_last_7_days: "Recent rain (last 7 days)",
+  rainfall_recent: "Recent rain total",
+  forecast_total_mm: "Forecast rain total",
+};
+
 export function formatLabel(key) {
+  if (LABEL_OVERRIDES[key]) return LABEL_OVERRIDES[key];
   return String(key)
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
