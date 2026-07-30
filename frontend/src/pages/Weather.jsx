@@ -42,7 +42,7 @@ export default function Weather() {
   const weather = data || dash?.weather;
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto w-full max-w-3xl space-y-4 lg:max-w-4xl">
       {!isLoggedIn ? (
         <GuestBanner detail="Guests see the rainfall outlook. Log in for full impact details and data quality notes." />
       ) : null}

@@ -87,7 +87,7 @@ export default function AdminPanel() {
   };
 
   return (
-    <div className="space-y-4 pb-2">
+    <div className="mx-auto w-full max-w-5xl space-y-4 pb-2">
       <Card title="Admin panel">
         <p className="text-sm text-ink-muted">
           Signed in as {currentUser.name}. Manage users, app settings, and local

@@ -62,28 +62,33 @@
 
 @layer components {
   .app-shell {
-    @apply flex h-dvh w-full items-center justify-center overflow-hidden;
+    @apply flex h-dvh w-full items-stretch justify-center overflow-hidden;
     background:
       radial-gradient(ellipse 70% 50% at 20% 10%, rgba(143, 188, 143, 0.22), transparent),
       radial-gradient(ellipse 50% 40% at 90% 80%, rgba(196, 137, 42, 0.16), transparent),
       #0f1f18;
   }
 
-  .phone-frame {
-    @apply relative h-full w-full overflow-hidden bg-mist;
+  /* Mobile: full-bleed. Laptop/desktop: wide workspace (not a phone mockup). */
+  .app-frame {
+    @apply relative flex h-full w-full overflow-hidden bg-mist;
   }
 
-  .phone-frame-inner {
-    @apply relative flex h-full w-full flex-col overflow-hidden;
+  .app-main {
+    @apply relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden;
   }
 
-  .phone-content {
+  .app-content {
     @apply min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[6.75rem] pt-4;
     -webkit-overflow-scrolling: touch;
   }
 
-  .phone-content-chat {
+  .app-content-chat {
     @apply flex flex-col overflow-hidden px-0 pb-[6.25rem] pt-0;
+  }
+
+  .desktop-side-nav {
+    width: 15.5rem;
   }
 
   .safe-top {
@@ -141,6 +146,23 @@
   .page-enter {
     animation: page-fade 220ms ease-out;
   }
+
+  /* Legacy aliases — older class names still used in a few spots */
+  .phone-frame {
+    @apply relative h-full w-full overflow-hidden bg-mist;
+  }
+
+  .phone-frame-inner {
+    @apply relative flex h-full w-full flex-col overflow-hidden;
+  }
+
+  .phone-content {
+    @apply min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[6.75rem] pt-4;
+  }
+
+  .phone-content-chat {
+    @apply flex flex-col overflow-hidden px-0 pb-[6.25rem] pt-0;
+  }
 }
 
 @keyframes page-fade {
@@ -154,9 +176,26 @@
   }
 }
 
-@media (min-width: 480px) {
-  .phone-frame {
-    @apply h-[min(860px,94dvh)] w-[min(100%,390px)] rounded-[2rem] border-[6px] border-veld-900 shadow-2xl;
+/* Laptop / desktop workspace — full app chrome, not a phone mockup */
+@media (min-width: 1024px) {
+  .app-shell {
+    @apply items-stretch justify-stretch p-0;
+  }
+
+  .app-frame {
+    @apply h-full w-full max-w-none rounded-none border-0 shadow-none;
+  }
+
+  .app-content {
+    @apply px-8 pb-8 pt-6;
+  }
+
+  .app-content-chat {
+    @apply px-0 pb-0 pt-0;
+  }
+
+  .desktop-side-nav {
+    width: 16.5rem;
   }
 }
 

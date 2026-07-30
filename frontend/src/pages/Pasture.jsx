@@ -62,65 +62,69 @@ export default function Pasture() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto w-full max-w-6xl space-y-4">
       {!isLoggedIn ? (
         <GuestBanner detail="Guests can check pasture health. Log in for full technical details and limitations." />
       ) : null}
 
-      <SiteMap
-        selectedLocation={farm.location}
-        onSelectSite={onSelectSite}
-        decision={decision}
-      />
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] lg:items-start">
+        <SiteMap
+          selectedLocation={farm.location}
+          onSelectSite={onSelectSite}
+          decision={decision}
+        />
 
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <select
-          aria-label="Location"
-          value={farm.location}
-          onChange={(e) => {
-            farm.setLocationByName(e.target.value);
-          }}
-          className="w-full rounded-xl border border-veld-200 bg-white px-3.5 py-3 text-sm font-medium outline-none focus:border-veld-500"
-        >
-          {NAMIBIA_LOCATIONS.map((loc) => (
-            <option key={loc.name} value={loc.name}>
-              {loc.name}
-              {loc.mapsTo && loc.mapsTo !== loc.name ? ` → ${loc.mapsTo}` : ""}
-            </option>
-          ))}
-        </select>
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="flex w-full items-center justify-center rounded-xl bg-veld-800 py-3.5 text-sm font-semibold text-white active:bg-veld-900 disabled:opacity-60"
-        >
-          {isLoading ? "Loading…" : "Check pasture health"}
-        </button>
-      </form>
+        <div className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <select
+              aria-label="Location"
+              value={farm.location}
+              onChange={(e) => {
+                farm.setLocationByName(e.target.value);
+              }}
+              className="w-full rounded-xl border border-veld-200 bg-white px-3.5 py-3 text-sm font-medium outline-none focus:border-veld-500"
+            >
+              {NAMIBIA_LOCATIONS.map((loc) => (
+                <option key={loc.name} value={loc.name}>
+                  {loc.name}
+                  {loc.mapsTo && loc.mapsTo !== loc.name ? ` → ${loc.mapsTo}` : ""}
+                </option>
+              ))}
+            </select>
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="flex w-full items-center justify-center rounded-xl bg-veld-800 py-3.5 text-sm font-semibold text-white active:bg-veld-900 disabled:opacity-60"
+            >
+              {isLoading ? "Loading…" : "Check pasture health"}
+            </button>
+          </form>
 
-      {error && (
-        <ErrorAlert message={error} onDismiss={() => setError(null)} />
-      )}
-
-      {isLoading && <Loader label="Loading pasture…" />}
-
-      {!isLoading && (decision || pasture) && (
-        <>
-          {decision && <ActionPriorityBanner decision={decision} />}
-          <PastureHealthCard decision={decision} pasture={pasture} />
-          {isLoggedIn && limitations.length > 0 && (
-            <Card title="Data limitations">
-              <ul className="space-y-2">
-                {limitations.map((item, i) => (
-                  <li key={i} className="text-sm text-ink-muted">
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </Card>
+          {error && (
+            <ErrorAlert message={error} onDismiss={() => setError(null)} />
           )}
-        </>
-      )}
+
+          {isLoading && <Loader label="Loading pasture…" />}
+
+          {!isLoading && (decision || pasture) && (
+            <>
+              {decision && <ActionPriorityBanner decision={decision} />}
+              <PastureHealthCard decision={decision} pasture={pasture} />
+              {isLoggedIn && limitations.length > 0 && (
+                <Card title="Data limitations">
+                  <ul className="space-y-2">
+                    {limitations.map((item, i) => (
+                      <li key={i} className="text-sm text-ink-muted">
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              )}
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

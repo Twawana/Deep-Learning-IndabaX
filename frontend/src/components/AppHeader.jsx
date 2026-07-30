@@ -65,7 +65,7 @@ export default function AppHeader({ action }) {
   const hint = display.hint(farm);
 
   return (
-    <header className="safe-top sticky top-0 z-[1100] border-b border-veld-100/80 bg-white/90 px-4 py-3 backdrop-blur-xl">
+    <header className="safe-top sticky top-0 z-[1100] border-b border-veld-100/80 bg-white/90 px-4 py-3 backdrop-blur-xl lg:px-8 lg:py-4">
       <div className="flex items-center justify-between gap-3">
         <div
           className={`min-w-0 transition-all duration-200 ease-out ${
@@ -74,11 +74,11 @@ export default function AppHeader({ action }) {
               : "translate-y-1 opacity-0"
           }`}
         >
-          <h1 className="truncate font-display text-xl font-bold tracking-tight text-veld-900">
+          <h1 className="truncate font-display text-xl font-bold tracking-tight text-veld-900 lg:text-2xl">
             {display.title}
           </h1>
           {hint && (
-            <p className="mt-0.5 truncate text-xs font-medium text-ink-muted">
+            <p className="mt-0.5 truncate text-xs font-medium text-ink-muted lg:text-sm">
               {hint}
             </p>
           )}
@@ -87,14 +87,14 @@ export default function AppHeader({ action }) {
           {!isLoggedIn ? (
             <Link
               to="/profile"
-              className="rounded-full bg-mist px-2.5 py-1 text-[11px] font-semibold text-veld-800 ring-1 ring-veld-100"
+              className="rounded-full bg-mist px-2.5 py-1 text-[11px] font-semibold text-veld-800 ring-1 ring-veld-100 lg:px-3.5 lg:py-1.5 lg:text-xs"
             >
               Log in
             </Link>
           ) : (
             <Link
               to="/profile"
-              className="max-w-[7rem] truncate rounded-full bg-veld-800 px-2.5 py-1 text-[11px] font-semibold text-white"
+              className="max-w-[7rem] truncate rounded-full bg-veld-800 px-2.5 py-1 text-[11px] font-semibold text-white lg:max-w-[12rem] lg:px-3.5 lg:py-1.5 lg:text-xs"
               title={currentUser?.name}
             >
               {isPremium ? "Premium" : currentUser?.name?.split(" ")[0] || "Account"}

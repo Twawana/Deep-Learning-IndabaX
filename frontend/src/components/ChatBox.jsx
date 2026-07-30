@@ -118,7 +118,7 @@ export default function ChatBox({
         )}
       </div>
 
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-3 py-3">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-3 py-3 lg:mx-auto lg:w-full lg:max-w-3xl lg:px-6">
         {messages.length === 0 && !isLoading ? (
           <div className="flex h-full flex-col justify-center gap-2 py-6">
             <p className="mb-1 px-1 text-center text-sm text-ink-muted">
@@ -175,9 +175,9 @@ export default function ChatBox({
 
       <form
         onSubmit={handleSubmit}
-        className="border-t border-veld-100 bg-white px-3 py-2.5"
+        className="border-t border-veld-100 bg-white px-3 py-2.5 lg:px-6"
       >
-        <div className="flex items-end gap-2">
+        <div className="mx-auto flex max-w-3xl items-end gap-2">
           <button
             type="button"
             onClick={handleMic}

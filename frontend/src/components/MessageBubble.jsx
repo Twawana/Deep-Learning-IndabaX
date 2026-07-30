@@ -22,7 +22,7 @@ export default function MessageBubble({ message, onSpeak, isSpeaking }) {
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
-        className={`max-w-[90%] rounded-2xl px-3.5 py-2.5 ${
+        className={`max-w-[90%] rounded-2xl px-3.5 py-2.5 lg:max-w-[42rem] ${
           isUser
             ? "rounded-br-md bg-veld-800 text-white"
             : "rounded-bl-md bg-white text-ink shadow-sm ring-1 ring-veld-100"

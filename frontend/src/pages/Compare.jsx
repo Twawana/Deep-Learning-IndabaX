@@ -38,9 +38,9 @@ export default function Compare() {
   const deltas = result?.comparison?.deltas_a_minus_b || {};
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto w-full max-w-5xl space-y-4">
       <div>
-        <h1 className="font-display text-lg font-semibold text-veld-900">
+        <h1 className="font-display text-lg font-semibold text-veld-900 lg:text-xl">
           Compare camps
         </h1>
         <p className="mt-1 text-sm text-ink-muted">
@@ -50,7 +50,7 @@ export default function Compare() {
       </div>
 
       <Card title="Locations">
-        <form onSubmit={handleCompare} className="space-y-3 text-sm">
+        <form onSubmit={handleCompare} className="space-y-3 text-sm lg:grid lg:grid-cols-[1fr_1fr_auto] lg:items-end lg:gap-4 lg:space-y-0">
           <label className="block">
             <span className="text-xs font-semibold text-ink-muted">Location A</span>
             <select
@@ -82,7 +82,7 @@ export default function Compare() {
           <button
             type="submit"
             disabled={loading || locationA === locationB}
-            className="w-full rounded-xl bg-veld-800 py-3 font-semibold text-white disabled:opacity-60"
+            className="w-full rounded-xl bg-veld-800 py-3 font-semibold text-white disabled:opacity-60 lg:w-auto lg:px-8"
           >
             {loading ? "Comparing…" : "Compare"}
           </button>

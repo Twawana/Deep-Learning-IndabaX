@@ -189,7 +189,7 @@ export default function Profile() {
     farm.region;
 
   return (
-    <div className="space-y-4 pb-2">
+    <div className="mx-auto w-full max-w-3xl space-y-4 pb-2 lg:max-w-4xl">
       <Card>
         <div className="flex items-center gap-3">
           <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-veld-800 font-display text-xl font-bold text-white">
