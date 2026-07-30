@@ -184,18 +184,33 @@ export async function getAdminState() {
   return data;
 }
 
-export async function loginAdmin(passcode) {
-  const { data } = await api.post("/admin/login", { passcode });
+export async function loginAccount(identifier, password) {
+  const { data } = await api.post("/admin/login", { identifier, password });
   return data;
 }
 
-export async function switchAccount(userId) {
-  const { data } = await api.post("/admin/switch", { user_id: userId });
+export async function registerAccount({ name, email, username, password }) {
+  const { data } = await api.post("/admin/register", {
+    name,
+    email,
+    username,
+    password,
+  });
   return data;
 }
 
 export async function logoutAccount() {
   const { data } = await api.post("/admin/logout");
+  return data;
+}
+
+export async function upgradeSubscription(tier = "premium") {
+  const { data } = await api.post("/admin/upgrade", { tier });
+  return data;
+}
+
+export async function recordAiUsage() {
+  const { data } = await api.post("/admin/ai-usage");
   return data;
 }
 

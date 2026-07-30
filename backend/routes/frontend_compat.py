@@ -51,6 +51,11 @@ class ChatRequest(BaseModel):
     land_tenure: Optional[str] = None
     water_source: Optional[str] = None
     farm_notes: Optional[str] = None
+    user_tier: Optional[str] = Field(
+        default="free",
+        description='Subscription tier: "free" or "premium".',
+    )
+    is_guest: bool = False
 
     @field_validator("herd_size", "number_of_camps", mode="before")
     @classmethod
@@ -58,6 +63,23 @@ class ChatRequest(BaseModel):
         if value == "" or value is None:
             return None
         return value
+
+    @field_validator("user_tier", mode="before")
+    @classmethod
+    def normalize_tier(cls, value: Any) -> str:
+        if value is None or value == "":
+            return "free"
+        text = str(value).strip().lower()
+        return "premium" if text == "premium" else "free"
+
+    @field_validator("is_guest", mode="before")
+    @classmethod
+    def normalize_guest(cls, value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None or value == "":
+            return False
+        return str(value).strip().lower() in {"1", "true", "yes"}
 
 
 def _resolve_location(body: ChatRequest) -> tuple[Optional[str], list[str]]:
@@ -165,7 +187,18 @@ def chat(body: ChatRequest) -> dict[str, Any]:
         or weather_data.get("confidence")
         or "low",
     }
-    return build_chat_response(message=body.message, location=location, advisor=advisor)
+    return build_chat_response(
+        message=body.message,
+        location=location,
+        advisor=advisor,
+        user_tier=body.user_tier or "free",
+        is_guest=bool(body.is_guest),
+        herd_size=body.herd_size,
+        livestock_type=animal,
+        farm_notes=body.farm_notes,
+        farmer_name=body.farmer_name,
+        farm_name=body.farm_name,
+    )
 
 
 @router.get(

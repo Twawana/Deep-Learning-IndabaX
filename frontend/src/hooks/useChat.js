@@ -3,6 +3,7 @@ import { sendMessage } from "../services/api";
 import { datasetLocation } from "../utils/constants";
 import { getErrorMessage } from "../utils/format";
 import { useFarmContext } from "../context/FarmContext";
+import { useAuth } from "../context/AuthContext";
 
 function toOptionalInt(value) {
   if (value === "" || value === null || value === undefined) return undefined;
@@ -12,6 +13,14 @@ function toOptionalInt(value) {
 
 export function useChat() {
   const farm = useFarmContext();
+  const {
+    userTier,
+    isLoggedIn,
+    isPremium,
+    canAskAsGuest,
+    guestAsksRemaining,
+    trackAiUsage,
+  } = useAuth();
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -23,6 +32,13 @@ export function useChat() {
     async (text) => {
       const trimmed = text.trim();
       if (!trimmed || isLoading) return null;
+
+      if (!isLoggedIn && !canAskAsGuest) {
+        setError(
+          "Guest Ask limit reached. Log in on Profile for unlimited free answers, or upgrade for Premium AI."
+        );
+        return null;
+      }
 
       const location = datasetLocation(farm);
       if (!location) {
@@ -46,10 +62,12 @@ export function useChat() {
         content: m.content,
       }));
 
+      // Guests and free accounts get free-tier answers; premium only when logged in + upgraded.
+      const effectiveTier = isPremium ? "premium" : "free";
+
       try {
         const data = await sendMessage({
           message: trimmed,
-          // nearest_town = picker; location free-text is notes only (not used for dataset key)
           nearest_town: location,
           location: location,
           region: farm.region,
@@ -64,9 +82,13 @@ export function useChat() {
           farm_size_ha: toOptionalInt(farm.farmSizeHa),
           land_tenure: farm.landTenure,
           water_source: farm.waterSource || undefined,
-          farm_notes: [farm.farmNotes, farm.customLocation].filter(Boolean).join(" | ") || undefined,
+          farm_notes:
+            [farm.farmNotes, farm.customLocation].filter(Boolean).join(" | ") ||
+            undefined,
           lat: Number(farm.lat),
           lon: Number(farm.lon),
+          user_tier: effectiveTier,
+          is_guest: !isLoggedIn,
           history,
         });
 
@@ -79,11 +101,17 @@ export function useChat() {
           tools_used: data.tools_used || [],
           sources: data.sources || null,
           limitations: data.limitations || "",
+          user_tier: data.user_tier || effectiveTier,
           timestamp: new Date().toISOString(),
         };
 
         setLastTools(aiMessage.tools_used);
         setMessages((prev) => [...prev, aiMessage]);
+        try {
+          await trackAiUsage();
+        } catch {
+          // Usage tracking is best-effort and should not block chat.
+        }
         return aiMessage;
       } catch (err) {
         setError(getErrorMessage(err, "Failed to send message."));
@@ -92,7 +120,16 @@ export function useChat() {
         setIsLoading(false);
       }
     },
-    [farm, isLoading, messages]
+    [
+      farm,
+      isLoading,
+      messages,
+      userTier,
+      isLoggedIn,
+      isPremium,
+      canAskAsGuest,
+      trackAiUsage,
+    ]
   );
 
   const clearChat = useCallback(() => {
@@ -109,5 +146,7 @@ export function useChat() {
     send,
     clearChat,
     lastTools,
+    guestAsksRemaining,
+    isLoggedIn,
   };
 }

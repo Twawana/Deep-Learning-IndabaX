@@ -1,7 +1,9 @@
 import Card from "../components/Card";
 import ErrorAlert from "../components/ErrorAlert";
+import GuestBanner from "../components/GuestBanner";
 import Loader from "../components/Loader";
 import { useFarmContext } from "../context/FarmContext";
+import { useAuth } from "../context/AuthContext";
 import { useWeather } from "../hooks/useWeather";
 import { NAMIBIA_LOCATIONS, datasetLocation } from "../utils/constants";
 import { formatValue, toArray } from "../utils/format";
@@ -17,6 +19,7 @@ const KEYS = [
 
 export default function Weather() {
   const farm = useFarmContext();
+  const { isLoggedIn } = useAuth();
   const { data, isLoading, error, fetchWeather, setError } = useWeather();
 
   const handleSubmit = (event) => {
@@ -36,11 +39,15 @@ export default function Weather() {
   const rows = data
     ? KEYS.filter(({ key }) => data[key] != null && data[key] !== "")
     : [];
+  const visibleRows = isLoggedIn ? rows : rows.slice(0, 3);
 
   const limitations = toArray(data?.limitations);
 
   return (
     <div className="space-y-4">
+      {!isLoggedIn ? (
+        <GuestBanner detail="Guests can check basic rainfall and temperature. Log in for full weather details." />
+      ) : null}
       <form onSubmit={handleSubmit} className="space-y-3">
         <select
           aria-label="Location"
@@ -73,9 +80,9 @@ export default function Weather() {
       {!isLoading && data && (
         <>
           <Card title={data.match_value || farm.location}>
-            {rows.length ? (
+            {visibleRows.length ? (
               <dl className="space-y-3">
-                {rows.map(({ key, label }) => (
+                {visibleRows.map(({ key, label }) => (
                   <div key={key} className="flex justify-between gap-3">
                     <dt className="text-sm text-ink-muted">{label}</dt>
                     <dd className="text-right text-sm font-semibold text-veld-900">
@@ -92,7 +99,7 @@ export default function Weather() {
             )}
           </Card>
 
-          {limitations.length > 0 && (
+          {isLoggedIn && limitations.length > 0 && (
             <Card title="Data limitations">
               <ul className="space-y-2">
                 {limitations.map((item, i) => (
@@ -103,6 +110,11 @@ export default function Weather() {
               </ul>
             </Card>
           )}
+          {!isLoggedIn && rows.length > 3 ? (
+            <p className="text-center text-xs text-ink-muted">
+              Log in to see full weather details.
+            </p>
+          ) : null}
         </>
       )}
     </div>

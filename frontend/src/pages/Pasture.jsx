@@ -1,7 +1,9 @@
 import Card from "../components/Card";
 import ErrorAlert from "../components/ErrorAlert";
+import GuestBanner from "../components/GuestBanner";
 import Loader from "../components/Loader";
 import { useFarmContext } from "../context/FarmContext";
+import { useAuth } from "../context/AuthContext";
 import { usePasture } from "../hooks/usePasture";
 import { NAMIBIA_LOCATIONS, datasetLocation } from "../utils/constants";
 import { formatLabel, formatValue, toArray } from "../utils/format";
@@ -19,6 +21,7 @@ const KEY_FIELDS = [
 
 export default function Pasture() {
   const farm = useFarmContext();
+  const { isLoggedIn } = useAuth();
   const { data, isLoading, error, fetchPasture, setError } = usePasture();
 
   const handleSubmit = (event) => {
@@ -37,11 +40,15 @@ export default function Pasture() {
         data[k],
       ])
     : [];
+  const visibleEntries = isLoggedIn ? entries : entries.slice(0, 3);
 
   const limitations = toArray(data?.limitations);
 
   return (
     <div className="space-y-4">
+      {!isLoggedIn ? (
+        <GuestBanner detail="Guests can check basic pasture cover. Log in for full metrics and data limitations." />
+      ) : null}
       <form onSubmit={handleSubmit} className="space-y-3">
         <select
           aria-label="Location"
@@ -79,9 +86,9 @@ export default function Pasture() {
                 Sites: {data.sites.join(", ")}
               </p>
             )}
-            {entries.length ? (
+            {visibleEntries.length ? (
               <dl className="space-y-3">
-                {entries.map(([key, value]) => (
+                {visibleEntries.map(([key, value]) => (
                   <div key={key} className="flex justify-between gap-3">
                     <dt className="text-sm text-ink-muted">{formatLabel(key)}</dt>
                     <dd className="text-right text-sm font-semibold text-veld-900">
@@ -98,7 +105,7 @@ export default function Pasture() {
             )}
           </Card>
 
-          {limitations.length > 0 && (
+          {isLoggedIn && limitations.length > 0 && (
             <Card title="Data limitations">
               <ul className="space-y-2">
                 {limitations.map((item, i) => (
@@ -109,6 +116,11 @@ export default function Pasture() {
               </ul>
             </Card>
           )}
+          {!isLoggedIn && entries.length > 3 ? (
+            <p className="text-center text-xs text-ink-muted">
+              Log in to see all pasture metrics.
+            </p>
+          ) : null}
         </>
       )}
     </div>

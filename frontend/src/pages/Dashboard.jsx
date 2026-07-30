@@ -1,9 +1,11 @@
 import { Link } from "react-router-dom";
 import Card from "../components/Card";
 import ErrorAlert from "../components/ErrorAlert";
+import GuestBanner from "../components/GuestBanner";
 import Loader from "../components/Loader";
 import { useDashboard } from "../hooks/useDashboard";
 import { useFarmContext } from "../context/FarmContext";
+import { useAuth } from "../context/AuthContext";
 import { formatLabel, formatValue, toArray } from "../utils/format";
 import { NAMIBIA_LOCATIONS } from "../utils/constants";
 
@@ -67,10 +69,13 @@ function SimpleList({ items, empty }) {
 
 export default function Dashboard() {
   const farm = useFarmContext();
+  const { isLoggedIn } = useAuth();
   const { data, isLoading, error, refetch, isFetching } = useDashboard();
 
   return (
     <div className="space-y-4">
+      {!isLoggedIn ? <GuestBanner /> : null}
+
       <div className="flex items-center gap-2">
         <select
           aria-label="Location"
@@ -109,21 +114,26 @@ export default function Dashboard() {
       ) : data ? (
         <div className="space-y-3">
           <Card title="Weather">
-            <SimpleMetrics data={data.weather} keys={WEATHER_KEYS} />
+            <SimpleMetrics data={data.weather} keys={WEATHER_KEYS.slice(0, isLoggedIn ? WEATHER_KEYS.length : 3)} />
           </Card>
           <Card title="Pasture">
-            <SimpleMetrics data={data.pasture_status} keys={PASTURE_KEYS} />
+            <SimpleMetrics data={data.pasture_status} keys={PASTURE_KEYS.slice(0, isLoggedIn ? PASTURE_KEYS.length : 3)} />
           </Card>
-          {toArray(data.alerts).length > 0 && (
+          {isLoggedIn && toArray(data.alerts).length > 0 && (
             <Card title="Alerts">
               <SimpleList items={data.alerts} empty="" />
             </Card>
           )}
-          {toArray(data.recommendations).length > 0 && (
+          {isLoggedIn && toArray(data.recommendations).length > 0 && (
             <Card title="Tips">
               <SimpleList items={data.recommendations} empty="" />
             </Card>
           )}
+          {!isLoggedIn ? (
+            <p className="text-center text-xs text-ink-muted">
+              Log in to see alerts, tips, and full metric details.
+            </p>
+          ) : null}
         </div>
       ) : null}
     </div>

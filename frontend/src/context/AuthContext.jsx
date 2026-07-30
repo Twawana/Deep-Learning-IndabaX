@@ -3,37 +3,35 @@ import {
   createUser,
   deleteUser,
   getAdminState,
-  loginAdmin,
+  loginAccount,
   logoutAccount,
   patchAdminSettings,
   patchUser,
-  switchAccount,
+  recordAiUsage,
+  registerAccount,
+  upgradeSubscription,
 } from "../services/api";
 
-const AUTH_STORAGE_KEY = "farmar-auth-v1-cache";
+const AUTH_STORAGE_KEY = "farmar-auth-v2-cache";
+const GUEST_ASK_KEY = "farmar-guest-asks-v1";
+export const GUEST_ASK_LIMIT = 5;
 
-const DEFAULT_USERS = [
-  {
-    id: "user-main",
-    name: "Farm User",
-    email: "farmer@farmar.local",
-    role: "user",
-    status: "active",
-    lastLogin: null,
-  },
-  {
-    id: "admin-main",
-    name: "Admin",
-    email: "admin@farmar.local",
-    role: "admin",
-    status: "active",
-    lastLogin: null,
-  },
-];
+const GUEST_USER = {
+  id: "guest",
+  name: "Guest",
+  username: "guest",
+  email: "",
+  role: "guest",
+  status: "active",
+  tier: "free",
+  aiUsage: 0,
+  lastLogin: null,
+};
 
 const DEFAULT_STATE = {
-  currentUser: DEFAULT_USERS[0],
-  users: DEFAULT_USERS,
+  currentUser: GUEST_USER,
+  isLoggedIn: false,
+  users: [],
   appSettings: {
     maintenanceMode: false,
     allowDataSync: true,
@@ -43,6 +41,21 @@ const DEFAULT_STATE = {
 
 const AuthContext = createContext(null);
 
+function mapUser(user) {
+  if (!user) return GUEST_USER;
+  return {
+    id: user.id || "guest",
+    name: user.name || "Guest",
+    username: user.username || "",
+    email: user.email || "",
+    role: user.role || "guest",
+    status: user.status || "active",
+    tier: user.tier === "premium" ? "premium" : "free",
+    aiUsage: Number(user.ai_usage ?? user.aiUsage ?? 0),
+    lastLogin: user.last_login ?? user.lastLogin ?? null,
+  };
+}
+
 function loadAuthState() {
   try {
     const raw = localStorage.getItem(AUTH_STORAGE_KEY);
@@ -50,8 +63,10 @@ function loadAuthState() {
     const parsed = JSON.parse(raw);
     return {
       ...DEFAULT_STATE,
-      ...DEFAULT_STATE,
       ...parsed,
+      users: (parsed.users || []).map(mapUser),
+      currentUser: mapUser(parsed.currentUser || GUEST_USER),
+      isLoggedIn: Boolean(parsed.isLoggedIn),
     };
   } catch {
     return DEFAULT_STATE;
@@ -65,6 +80,13 @@ function saveAuthState(state) {
 export function AuthProvider({ children }) {
   const [state, setState] = useState(loadAuthState);
   const [loading, setLoading] = useState(true);
+  const [guestAskCount, setGuestAskCount] = useState(() => {
+    try {
+      return Number(localStorage.getItem(GUEST_ASK_KEY) || 0);
+    } catch {
+      return 0;
+    }
+  });
 
   const updateState = (updater) => {
     setState((prev) => {
@@ -75,26 +97,12 @@ export function AuthProvider({ children }) {
   };
 
   const applyRemoteState = (data) => {
-    const users =
-      data?.users?.map((user) => ({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        status: user.status,
-        lastLogin: user.last_login ?? null,
-      })) || DEFAULT_USERS;
-    const remoteCurrent = data?.current_user || users[0];
+    const users = (data?.users || []).map(mapUser);
+    const remoteCurrent = mapUser(data?.current_user || GUEST_USER);
     updateState((prev) => ({
       ...prev,
-      currentUser: {
-        id: remoteCurrent.id,
-        name: remoteCurrent.name,
-        email: remoteCurrent.email,
-        role: remoteCurrent.role,
-        status: remoteCurrent.status,
-        lastLogin: remoteCurrent.last_login ?? null,
-      },
+      currentUser: remoteCurrent,
+      isLoggedIn: Boolean(data?.is_logged_in),
       users,
       appSettings: {
         maintenanceMode: Boolean(data?.app_settings?.maintenance_mode),
@@ -137,26 +145,64 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const loginAsUser = async (userId) => {
-    return withBackendState(() => switchAccount(userId));
+  const login = async (identifier, password) => {
+    return withBackendState(() => loginAccount(identifier, password));
   };
 
-  const loginAsAdmin = async (passcode) => {
-    return withBackendState(() => loginAdmin(passcode));
+  const register = async ({ name, email, username, password }) => {
+    return withBackendState(() =>
+      registerAccount({ name, email, username, password })
+    );
   };
 
   const logout = async () => {
     return withBackendState(() => logoutAccount());
   };
 
-  const addUser = async ({ name, email, role = "user" }) => {
+  const upgradePlan = async (tier = "premium") => {
+    return withBackendState(() => upgradeSubscription(tier));
+  };
+
+  const currentUser = state.currentUser || GUEST_USER;
+  const userTier = currentUser?.tier === "premium" ? "premium" : "free";
+  const isLoggedIn = Boolean(state.isLoggedIn) && currentUser.id !== "guest";
+  const guestAsksRemaining = Math.max(0, GUEST_ASK_LIMIT - guestAskCount);
+  const canAskAsGuest = guestAsksRemaining > 0;
+
+  const trackAiUsage = async () => {
+    if (!isLoggedIn) {
+      setGuestAskCount((prev) => {
+        const next = prev + 1;
+        try {
+          localStorage.setItem(GUEST_ASK_KEY, String(next));
+        } catch {
+          // ignore storage failures
+        }
+        return next;
+      });
+      return { ok: true, message: "Guest ask recorded." };
+    }
+    return withBackendState(() => recordAiUsage());
+  };
+
+  const addUser = async ({
+    name,
+    email,
+    username,
+    password = "changeme",
+    role = "user",
+    tier = "free",
+  }) => {
     const cleanName = String(name || "").trim();
     if (!cleanName) return { ok: false, message: "User name is required." };
     return withBackendState(() =>
       createUser({
         name: cleanName,
         email: String(email || "").trim() || undefined,
+        username: String(username || "").trim() || undefined,
+        password,
         role: role === "admin" ? "admin" : "user",
+        tier: tier === "premium" ? "premium" : "free",
       })
     );
   };
@@ -166,6 +212,7 @@ export function AuthProvider({ children }) {
       patchUser(userId, {
         role: patch.role,
         status: patch.status,
+        tier: patch.tier,
       })
     );
   };
@@ -183,25 +230,41 @@ export function AuthProvider({ children }) {
     );
   };
 
-  const currentUser = state.currentUser || state.users[0];
-
   const value = useMemo(
     () => ({
       users: state.users,
       currentUser,
-      isAdmin: currentUser?.role === "admin",
+      isLoggedIn,
+      isAdmin: isLoggedIn && currentUser?.role === "admin",
+      userTier,
+      isPremium: isLoggedIn && userTier === "premium",
+      guestAskCount,
+      guestAskLimit: GUEST_ASK_LIMIT,
+      guestAsksRemaining,
+      canAskAsGuest,
       appSettings: state.appSettings,
       source: state.source,
       loading,
-      loginAsUser,
-      loginAsAdmin,
+      login,
+      register,
       logout,
+      upgradePlan,
+      trackAiUsage,
       addUser,
       updateUser,
       removeUser,
       updateSettings,
     }),
-    [state, currentUser, loading]
+    [
+      state,
+      currentUser,
+      userTier,
+      isLoggedIn,
+      loading,
+      guestAskCount,
+      guestAsksRemaining,
+      canAskAsGuest,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

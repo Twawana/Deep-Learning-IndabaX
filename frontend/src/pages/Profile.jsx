@@ -36,13 +36,28 @@ function pickForm(farm) {
 
 export default function Profile() {
   const farm = useFarmContext();
-  const { currentUser, users, isAdmin, loginAsUser, loginAsAdmin, logout, source } =
-    useAuth();
+  const {
+    currentUser,
+    isAdmin,
+    isLoggedIn,
+    isPremium,
+    login,
+    register,
+    logout,
+    upgradePlan,
+    source,
+  } = useAuth();
   const [form, setForm] = useState(() => pickForm(farm));
   const [saved, setSaved] = useState(false);
-  const [selectedUserId, setSelectedUserId] = useState(currentUser.id);
-  const [adminPasscode, setAdminPasscode] = useState("");
+  const [authMode, setAuthMode] = useState("login"); // login | register
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const [registerName, setRegisterName] = useState("");
+  const [registerEmail, setRegisterEmail] = useState("");
+  const [registerUsername, setRegisterUsername] = useState("");
+  const [registerPassword, setRegisterPassword] = useState("");
   const [authMessage, setAuthMessage] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
 
   useEffect(() => {
     setForm(pickForm(farm));
@@ -62,10 +77,6 @@ export default function Profile() {
     farm.waterSource,
     farm.farmNotes,
   ]);
-
-  useEffect(() => {
-    setSelectedUserId(currentUser.id);
-  }, [currentUser.id]);
 
   const setField = (key, value) => {
     setSaved(false);
@@ -113,21 +124,57 @@ export default function Profile() {
     setSaved(false);
   };
 
-  const handleSwitchUser = async () => {
-    const result = await loginAsUser(selectedUserId);
+  const handleLogin = async (event) => {
+    event.preventDefault();
+    setAuthBusy(true);
+    const result = await login(identifier, password);
     setAuthMessage(result.message);
+    if (result.ok) {
+      setPassword("");
+    }
+    setAuthBusy(false);
   };
 
-  const handleAdminLogin = async (event) => {
+  const handleRegister = async (event) => {
     event.preventDefault();
-    const result = await loginAsAdmin(adminPasscode);
+    setAuthBusy(true);
+    const result = await register({
+      name: registerName,
+      email: registerEmail,
+      username: registerUsername || undefined,
+      password: registerPassword,
+    });
     setAuthMessage(result.message);
-    if (result.ok) setAdminPasscode("");
+    if (result.ok) {
+      setRegisterPassword("");
+      setAuthMode("login");
+    }
+    setAuthBusy(false);
   };
 
   const handleLogout = async () => {
+    setAuthBusy(true);
     const result = await logout();
     setAuthMessage(result.message);
+    setAuthBusy(false);
+  };
+
+  const handleUpgrade = async () => {
+    if (!isLoggedIn) {
+      setAuthMessage("Please log in before upgrading.");
+      return;
+    }
+    setAuthBusy(true);
+    const result = await upgradePlan("premium");
+    setAuthMessage(result.message);
+    setAuthBusy(false);
+  };
+
+  const handleDowngrade = async () => {
+    setAuthBusy(true);
+    const result = await upgradePlan("free");
+    setAuthMessage(result.message);
+    setAuthBusy(false);
   };
 
   const initials = (form.farmerName || form.farmName || "F")
@@ -162,72 +209,167 @@ export default function Profile() {
         </div>
       </Card>
 
-      <Card title="Account access">
+      <Card title="Account">
         <div className="space-y-3">
-          <div className="rounded-xl border border-veld-100 bg-mist px-3 py-2.5">
-            <p className="text-sm font-semibold text-ink">{currentUser.name}</p>
-            <p className="text-xs text-ink-muted">
-              {currentUser.email} · {currentUser.role === "admin" ? "Admin" : "User"}
-            </p>
-            <p className="mt-1 text-[11px] text-ink-muted">
-              Auth source: {source === "backend" ? "Backend API" : "Local cache"}
-            </p>
-          </div>
+          {isLoggedIn ? (
+            <>
+              <div className="rounded-xl border border-veld-100 bg-mist px-3 py-2.5">
+                <p className="text-sm font-semibold text-ink">{currentUser.name}</p>
+                <p className="text-xs text-ink-muted">
+                  {currentUser.email || currentUser.username}
+                  {currentUser.role === "admin" ? " · Admin" : ""}
+                  {" · "}
+                  {isPremium ? "Premium" : "Free"}
+                </p>
+                <p className="mt-1 text-[11px] text-ink-muted">
+                  AI asks used: {currentUser.aiUsage || 0}
+                  {source === "backend" ? " · synced" : ""}
+                </p>
+              </div>
 
-          <div className="space-y-2">
-            <label htmlFor="account-switch" className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-              Switch or login
-            </label>
-            <select
-              id="account-switch"
-              value={selectedUserId}
-              onChange={(e) => setSelectedUserId(e.target.value)}
-              className="field-input"
-            >
-              {users
-                .filter((user) => user.status === "active")
-                .map((user) => (
-                  <option key={user.id} value={user.id}>
-                    {user.name} ({user.role})
-                  </option>
-                ))}
-            </select>
-            <button
-              type="button"
-              onClick={handleSwitchUser}
-              className="w-full rounded-xl border border-veld-200 bg-white py-2.5 text-sm font-semibold text-veld-800"
-            >
-              Switch account
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={handleLogout}
+                disabled={authBusy}
+                className="w-full rounded-xl border border-veld-200 bg-white py-2.5 text-sm font-semibold text-veld-800"
+              >
+                Log out
+              </button>
+            </>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2 rounded-xl bg-mist p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode("login");
+                    setAuthMessage("");
+                  }}
+                  className={`rounded-lg py-2 text-sm font-semibold ${
+                    authMode === "login"
+                      ? "bg-white text-veld-900 shadow-sm"
+                      : "text-ink-muted"
+                  }`}
+                >
+                  Log in
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode("register");
+                    setAuthMessage("");
+                  }}
+                  className={`rounded-lg py-2 text-sm font-semibold ${
+                    authMode === "register"
+                      ? "bg-white text-veld-900 shadow-sm"
+                      : "text-ink-muted"
+                  }`}
+                >
+                  Create account
+                </button>
+              </div>
 
-          <form onSubmit={handleAdminLogin} className="space-y-2">
-            <label htmlFor="admin-passcode" className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-              Login as admin
-            </label>
-            <input
-              id="admin-passcode"
-              type="password"
-              value={adminPasscode}
-              onChange={(e) => setAdminPasscode(e.target.value)}
-              placeholder="Enter admin passcode"
-              className="field-input"
-            />
-            <button
-              type="submit"
-              className="w-full rounded-xl bg-veld-800 py-2.5 text-sm font-semibold text-white"
-            >
-              Login as admin
-            </button>
-          </form>
-
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="w-full py-1.5 text-xs font-semibold text-ink-muted"
-          >
-            Logout to default user
-          </button>
+              {authMode === "login" ? (
+                <form onSubmit={handleLogin} className="space-y-2">
+                  <p className="text-sm text-ink-muted">
+                    Log in to unlock full details, unlimited Ask, and Premium AI.
+                  </p>
+                  <Field label="Email or username" htmlFor="login-identifier">
+                    <input
+                      id="login-identifier"
+                      type="text"
+                      autoComplete="username"
+                      value={identifier}
+                      onChange={(e) => setIdentifier(e.target.value)}
+                      placeholder="farmer or farmer@farmar.local"
+                      className="field-input"
+                      required
+                    />
+                  </Field>
+                  <Field label="Password" htmlFor="login-password">
+                    <input
+                      id="login-password"
+                      type="password"
+                      autoComplete="current-password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Enter password"
+                      className="field-input"
+                      required
+                    />
+                  </Field>
+                  <button
+                    type="submit"
+                    disabled={authBusy}
+                    className="w-full rounded-xl bg-veld-800 py-2.5 text-sm font-semibold text-white"
+                  >
+                    {authBusy ? "Signing in..." : "Log in"}
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleRegister} className="space-y-2">
+                  <p className="text-sm text-ink-muted">
+                    Create a free account to keep your plan and unlock more Ask usage.
+                  </p>
+                  <Field label="Your name" htmlFor="register-name">
+                    <input
+                      id="register-name"
+                      type="text"
+                      autoComplete="name"
+                      value={registerName}
+                      onChange={(e) => setRegisterName(e.target.value)}
+                      placeholder="e.g. Maria"
+                      className="field-input"
+                      required
+                    />
+                  </Field>
+                  <Field label="Email" htmlFor="register-email">
+                    <input
+                      id="register-email"
+                      type="email"
+                      autoComplete="email"
+                      value={registerEmail}
+                      onChange={(e) => setRegisterEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className="field-input"
+                      required
+                    />
+                  </Field>
+                  <Field label="Username (optional)" htmlFor="register-username">
+                    <input
+                      id="register-username"
+                      type="text"
+                      autoComplete="username"
+                      value={registerUsername}
+                      onChange={(e) => setRegisterUsername(e.target.value)}
+                      placeholder="e.g. maria"
+                      className="field-input"
+                    />
+                  </Field>
+                  <Field label="Password" htmlFor="register-password">
+                    <input
+                      id="register-password"
+                      type="password"
+                      autoComplete="new-password"
+                      value={registerPassword}
+                      onChange={(e) => setRegisterPassword(e.target.value)}
+                      placeholder="At least 4 characters"
+                      className="field-input"
+                      minLength={4}
+                      required
+                    />
+                  </Field>
+                  <button
+                    type="submit"
+                    disabled={authBusy}
+                    className="w-full rounded-xl bg-veld-800 py-2.5 text-sm font-semibold text-white"
+                  >
+                    {authBusy ? "Creating..." : "Create account"}
+                  </button>
+                </form>
+              )}
+            </div>
+          )}
 
           {isAdmin ? (
             <Link
@@ -241,6 +383,53 @@ export default function Profile() {
           {authMessage ? (
             <p className="text-xs font-medium text-veld-700">{authMessage}</p>
           ) : null}
+        </div>
+      </Card>
+
+      <Card title="AI subscription">
+        <div className="space-y-3">
+          <div className="rounded-xl border border-veld-100 bg-mist px-3 py-2.5">
+            <p className="text-sm font-semibold text-ink">
+              Current plan: {isPremium ? "Premium" : "Free"}
+            </p>
+            <p className="mt-1 text-xs text-ink-muted">
+              {isPremium
+                ? "Full grazing insights, rainfall analysis, and stocking recommendations."
+                : "Short basic answers only. Upgrade for detailed AI grazing advice."}
+            </p>
+          </div>
+
+          {!isPremium ? (
+            <button
+              type="button"
+              onClick={handleUpgrade}
+              disabled={authBusy}
+              className="w-full rounded-xl bg-veld-800 py-3 text-sm font-semibold text-white"
+            >
+              Upgrade to Premium
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleDowngrade}
+              disabled={authBusy}
+              className="w-full rounded-xl border border-veld-200 bg-white py-2.5 text-sm font-semibold text-veld-800"
+            >
+              Switch back to Free
+            </button>
+          )}
+
+          {!isLoggedIn ? (
+            <p className="text-[11px] text-ink-muted">
+              Guests stay on basic answers. Log in first, then upgrade for Premium AI.
+            </p>
+          ) : null}
+
+          <ul className="space-y-1 text-xs text-ink-muted">
+            <li>• Guest: browse basics + limited Ask</li>
+            <li>• Free account: full metrics + unlimited short Ask</li>
+            <li>• Premium: detailed grazing, rainfall, and stocking advice</li>
+          </ul>
         </div>
       </Card>
 

@@ -20,15 +20,18 @@ export default function AdminPanel() {
   const [newUserName, setNewUserName] = useState("");
   const [newUserEmail, setNewUserEmail] = useState("");
   const [newUserRole, setNewUserRole] = useState("user");
+  const [newUserTier, setNewUserTier] = useState("free");
   const [flash, setFlash] = useState("");
 
   const stats = useMemo(() => {
     const admins = users.filter((user) => user.role === "admin").length;
     const active = users.filter((user) => user.status === "active").length;
+    const premium = users.filter((user) => user.tier === "premium").length;
     return {
       totalUsers: users.length,
       admins,
       active,
+      premium,
     };
   }, [users]);
 
@@ -42,12 +45,14 @@ export default function AdminPanel() {
       name: newUserName,
       email: newUserEmail,
       role: newUserRole,
+      tier: newUserTier,
     });
     setFlash(result.message);
     if (result.ok) {
       setNewUserName("");
       setNewUserEmail("");
       setNewUserRole("user");
+      setNewUserTier("free");
     }
   };
 
@@ -58,6 +63,11 @@ export default function AdminPanel() {
 
   const handleStatusChange = async (userId, status) => {
     const result = await updateUser(userId, { status });
+    setFlash(result.message);
+  };
+
+  const handleTierChange = async (userId, tier) => {
+    const result = await updateUser(userId, { tier });
     setFlash(result.message);
   };
 
@@ -91,10 +101,11 @@ export default function AdminPanel() {
       </Card>
 
       <Card title="Platform status">
-        <div className="grid grid-cols-3 gap-3 text-center">
+        <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-4">
           <StatTile label="Users" value={stats.totalUsers} />
           <StatTile label="Admins" value={stats.admins} />
           <StatTile label="Active" value={stats.active} />
+          <StatTile label="Premium" value={stats.premium} />
         </div>
       </Card>
 
@@ -132,14 +143,17 @@ export default function AdminPanel() {
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <p className="text-sm font-semibold text-ink">{user.name}</p>
-                    <p className="text-xs text-ink-muted">{user.email}</p>
+                    <p className="text-xs text-ink-muted">
+                      {user.email || user.username}
+                      {user.aiUsage != null ? ` · AI asks: ${user.aiUsage}` : ""}
+                    </p>
                   </div>
                   <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-ink-muted ring-1 ring-veld-100">
                     {user.id === currentUser.id ? "Current" : "User"}
                   </span>
                 </div>
 
-                <div className="mt-3 grid grid-cols-2 gap-2">
+                <div className="mt-3 grid grid-cols-3 gap-2">
                   <select
                     value={user.role}
                     onChange={(e) => handleRoleChange(user.id, e.target.value)}
@@ -155,6 +169,14 @@ export default function AdminPanel() {
                   >
                     <option value="active">Active</option>
                     <option value="disabled">Disabled</option>
+                  </select>
+                  <select
+                    value={user.tier || "free"}
+                    onChange={(e) => handleTierChange(user.id, e.target.value)}
+                    className="field-input py-2"
+                  >
+                    <option value="free">Free</option>
+                    <option value="premium">Premium</option>
                   </select>
                 </div>
 
@@ -197,6 +219,14 @@ export default function AdminPanel() {
           >
             <option value="user">User</option>
             <option value="admin">Admin</option>
+          </select>
+          <select
+            value={newUserTier}
+            onChange={(e) => setNewUserTier(e.target.value)}
+            className="field-input py-2"
+          >
+            <option value="free">Free</option>
+            <option value="premium">Premium</option>
           </select>
           <button
             type="submit"

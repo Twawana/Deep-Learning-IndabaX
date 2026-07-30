@@ -56,13 +56,13 @@ export default function MessageBubble({ message, onSpeak, isSpeaking }) {
           </ul>
         )}
 
-        {!isUser && toolsUsed.length > 0 && (
+        {!isUser && toolsUsed.length > 0 && message.user_tier !== "free" && (
           <p className="mt-2 text-[11px] text-ink-muted">
             Tools: {toolsUsed.map((t) => (typeof t === "string" ? t : t?.name || String(t))).join(", ")}
           </p>
         )}
 
-        {!isUser && limitations.length > 0 && (
+        {!isUser && limitations.length > 0 && message.user_tier !== "free" && (
           <ul className="mt-2 space-y-1 border-t border-veld-100 pt-2">
             {limitations.map((item, index) => (
               <li
@@ -75,7 +75,7 @@ export default function MessageBubble({ message, onSpeak, isSpeaking }) {
           </ul>
         )}
 
-        {!isUser && message.reasoning && (
+        {!isUser && message.reasoning && message.user_tier !== "free" && (
           <div className="mt-2">
             <button
               type="button"
