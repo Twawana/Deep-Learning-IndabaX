@@ -2,8 +2,8 @@
 Decision-support layer for Namibian grazing advice.
 
 Builds structured, farmer-facing recommendations from existing pasture,
-weather, and grazing tool outputs. Does not invent NDVI, carrying capacity,
-or rainfall — missing values stay explicit and uncertain language is used.
+weather, and grazing tool outputs. Uses NDVI and carrying capacity when
+present (synthetic rows); otherwise those stay explicitly unavailable.
 """
 
 from __future__ import annotations
@@ -81,9 +81,20 @@ def _rain_dry(recent_mm: Optional[float], forecast_mm: Optional[float]) -> bool:
 def _cover_stressed(cover: Optional[float], biomass: Optional[float]) -> bool:
     if cover is not None and cover < 15:
         return True
-    if biomass is not None and biomass < 50:
-        return True
+    if biomass is not None:
+        # Synthetic grass biomass is kg/ha (often 200+); Lacuna field biomass is smaller.
+        if biomass >= 200:
+            return biomass < 450
+        return biomass < 50
     return False
+
+
+def _biomass_healthy(biomass: Optional[float]) -> bool:
+    if biomass is None:
+        return False
+    if biomass >= 200:
+        return biomass >= 900
+    return biomass >= 100
 
 
 def _pasture_health_level(
@@ -96,7 +107,7 @@ def _pasture_health_level(
         return "unknown"
     if _cover_stressed(cover, biomass) or risk == "high":
         return "poor" if (cover is not None and cover < 10) or risk == "high" else "stressed"
-    if cover is not None and cover >= 35 and (biomass is None or biomass >= 100):
+    if cover is not None and cover >= 35 and (biomass is None or _biomass_healthy(biomass)):
         if bush is not None and bush >= 30:
             return "fair"
         return "good"
@@ -243,6 +254,8 @@ def _technical_metrics(
     pasture_ui: dict[str, Any],
     grazing: dict[str, Any],
 ) -> list[dict[str, Any]]:
+    carrying = pasture_ui.get("carrying_capacity")
+    ndvi = pasture_ui.get("ndvi")
     return [
         {
             "key": "vegetation_cover",
@@ -280,17 +293,25 @@ def _technical_metrics(
             "key": "carrying_capacity",
             "label": "Recommended Grazing Capacity",
             "technical_name": "Carrying capacity",
-            "value": None,
-            "unit": None,
-            "plain_language": "Not available in this dataset. Stocking advice stays qualitative and should be checked on the ground.",
+            "value": carrying,
+            "unit": "ha/LSU" if carrying is not None else None,
+            "plain_language": (
+                f"Estimated land needed per livestock unit: about {carrying:.1f} ha/LSU."
+                if carrying is not None
+                else "Not available for this location. Stocking advice stays qualitative and should be checked on the ground."
+            ),
         },
         {
             "key": "ndvi",
             "label": "Vegetation Health (satellite)",
             "technical_name": "NDVI",
-            "value": None,
+            "value": ndvi,
             "unit": None,
-            "plain_language": "A satellite greenness index. Not provided in the current processed field dataset.",
+            "plain_language": (
+                f"Satellite greenness index about {ndvi:.2f} (higher usually means greener vegetation)."
+                if ndvi is not None
+                else "A satellite greenness index. Not provided for this location."
+            ),
         },
     ]
 
@@ -475,18 +496,34 @@ def _pasture_ui_lite(pasture_data: dict[str, Any]) -> dict[str, Any]:
             "biomass": None,
             "bush_encroachment": None,
             "grazing_pressure": None,
+            "carrying_capacity": None,
+            "ndvi": None,
             "observation_date": None,
             "sites": [],
+            "dataset_source": None,
         }
     metrics = pasture_data.get("pasture") or {}
+    nearby = pasture_data.get("nearby_synthetic") or {}
+    carrying = metrics.get("carrying_capacity_ha_per_lsu")
+    if carrying is None and nearby.get("found"):
+        carrying = nearby.get("carrying_capacity_ha_per_lsu")
+    ndvi = metrics.get("ndvi")
+    if ndvi is None and nearby.get("found"):
+        ndvi = nearby.get("ndvi")
     return {
         "found": True,
         "vegetation_cover": metrics.get("vegetation_cover"),
         "biomass": metrics.get("biomass"),
         "bush_encroachment": metrics.get("bush_encroachment"),
-        "grazing_pressure": metrics.get("grazing_pressure_recorded"),
+        "grazing_pressure": metrics.get("grazing_pressure_recorded")
+        or metrics.get("grazing_pressure_label"),
+        "carrying_capacity": carrying,
+        "ndvi": ndvi,
+        "livestock_density_lsu_per_ha": metrics.get("livestock_density_lsu_per_ha")
+        or nearby.get("livestock_density_lsu_per_ha"),
         "observation_date": pasture_data.get("observation_date"),
         "sites": pasture_data.get("sites") or [],
+        "dataset_source": metrics.get("dataset_source"),
     }
 
 

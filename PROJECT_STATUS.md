@@ -12,9 +12,10 @@ Build an AI-powered **decision support system** for Namibian communal and commer
 
 It combines:
 
-- Historical pasture/rangeland observations (processed Lacuna dataset)
+- Historical pasture/rangeland observations (Lacuna field + synthetic_v2 merged)
 - Near-term weather/rainfall context (Open-Meteo)
-- Farmer profile context (location, herd, land tenure, farm notes)
+- Farmer profile context (location, herd, land tenure, farm size, farm notes)
+- Intent-routed tools (stocking, year-over-year, tenure peers) + decision layer
 - Natural-language chat guidance (tool-backed now, Gemini planned next)
 
 Primary farmer questions: Can my herd stay? Should I move? Is grass recovering? Is rainfall enough?
@@ -53,8 +54,10 @@ Farmer (mobile/web UI)
 
 Core design rule:
 
-- Runtime logic never reads raw research Excel files directly.
+- Runtime logic never reads raw research Excel/Numbers files directly.
 - Runtime reads only `backend/data/processed/advisory_dataset.csv`.
+- That CSV combines Lacuna field plots (`lacuna_field`) and the synthetic
+  Namibia rangeland dataset (`synthetic_v2`, converted from `.numbers`).
 
 ---
 
@@ -64,15 +67,17 @@ Core design rule:
 Deep-Learning-IndabaX/
 ├── backend/
 │   ├── data/
-│   │   ├── raw/                          # Local only, gitignored (Kaggle unzip)
+│   │   ├── raw/                          # Local only, gitignored (.numbers / Lacuna unzip)
 │   │   └── processed/
-│   │       ├── advisory_dataset.csv      # Runtime dataset used by API/tools
+│   │       ├── advisory_dataset.csv      # Runtime dataset (Lacuna + synthetic)
+│   │       ├── synthetic_dataset.csv     # Mapped synthetic archive
 │   │       ├── advisory_dataset.json
 │   │       └── advisory_dataset_summary.json
 │   ├── scripts/
 │   │   ├── download_dataset.py           # Optional helper to copy/download raw dataset
 │   │   ├── inspect_dataset.py            # Dataset schema/column inspection
-│   │   └── process_dataset.py            # Raw -> processed advisory table
+│   │   ├── process_dataset.py            # Lacuna raw -> processed advisory table
+│   │   └── convert_and_merge_synthetic.py # Numbers/CSV synthetic -> merge into advisory
 │   ├── models/
 │   │   └── schemas.py                    # Pydantic request/response models
 │   ├── services/

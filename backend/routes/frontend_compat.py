@@ -12,9 +12,14 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 
 from services import dataset_service
+from services.agent_router import build_intent_answer, detect_intents
+from services.dataset_bridge import is_political_region
 from services.frontend_bridge import build_chat_response, build_dashboard
 from tools.grazing_tool import calculate_grazing_pressure
+from tools.history_tool import compare_to_prior_year
 from tools.pasture_tool import get_pasture_data
+from tools.stocking_tool import estimate_safe_stocking
+from tools.tenure_tool import compare_tenure_nearby
 from tools.weather_tool import get_weather
 
 router = APIRouter(tags=["frontend"])
@@ -99,11 +104,18 @@ def _resolve_location(body: ChatRequest) -> tuple[Optional[str], list[str]]:
         text = str(candidate).strip()
         matched, matched_on, match_value = dataset_service.filter_by_query(text)
         if not matched.empty:
-            # Prefer site-level matches; skip if this only hit a broad ecoregion name
+            # Prefer site-level matches. Allow political regions (synthetic_v2);
+            # skip broad Lacuna ecoregion aggregates unless nothing else matches.
             if matched_on == "region" or str(matched_on).endswith("->region"):
+                if is_political_region(str(match_value or text)):
+                    notes.append(
+                        f"Matched political region '{match_value}' "
+                        "(synthetic rangeland sites across that region)."
+                    )
+                    return text, notes
                 notes.append(
-                    f"Skipped broad region match '{match_value}' from {label}; "
-                    "prefer a town/site or GPS."
+                    f"Skipped broad ecoregion match '{match_value}' from {label}; "
+                    "prefer a town/site, political region, or GPS."
                 )
                 continue
             if label == "location" and body.nearest_town and _norm_diff(body.nearest_town, text):
@@ -140,8 +152,9 @@ def chat(body: ChatRequest) -> dict[str, Any]:
     """
     Farmar Ask-tab endpoint.
 
-    Uses pasture, weather, and grazing tools to build a response shaped for the frontend.
-    Does **not** call Gemini yet — replace internals later with real agent reasoning.
+    Runs core pasture/weather/grazing tools, then intent-routed tools
+    (stocking, year-over-year, tenure peers) so Lacuna + synthetic fields
+    answer the right farmer question.
     """
     location, resolve_notes = _resolve_location(body)
     if not location:
@@ -149,18 +162,49 @@ def chat(body: ChatRequest) -> dict[str, Any]:
             status_code=400,
             detail=(
                 "No usable location. Choose a supported town/site in your profile "
-                "(e.g. Gobabis, Molly, Neudamm, Windhoek), or provide GPS near a research site."
+                "(e.g. Gobabis, Molly, Neudamm, Windhoek, Khomas, Omaheke), "
+                "or provide GPS near a research/synthetic site."
             ),
         )
 
     animal = body.livestock_type or body.animal_type
+    intents = detect_intents(body.message)
     pasture_data = get_pasture_data(location)
     weather_data = get_weather(location)
     grazing = calculate_grazing_pressure(
         location,
         herd_size=body.herd_size,
         animal_type=animal,
+        farm_size_ha=body.farm_size_ha,
         pasture_data=pasture_data,
+    )
+
+    stocking = None
+    yoy = None
+    tenure = None
+    if "stocking" in intents or "general" in intents:
+        stocking = estimate_safe_stocking(
+            location,
+            herd_size=body.herd_size,
+            animal_type=animal,
+            farm_size_ha=body.farm_size_ha,
+            pasture_data=pasture_data,
+        )
+    if "yoy" in intents or "bush" in intents:
+        yoy = compare_to_prior_year(location)
+    if "tenure" in intents:
+        tenure = compare_tenure_nearby(
+            location,
+            land_tenure=body.land_tenure,
+            latitude=body.lat,
+            longitude=body.lon,
+        )
+
+    intent_paragraphs = build_intent_answer(
+        intents=intents,
+        stocking=stocking,
+        yoy=yoy,
+        tenure=tenure,
     )
 
     limitations = list(
@@ -169,18 +213,21 @@ def chat(body: ChatRequest) -> dict[str, Any]:
             + (pasture_data.get("limitations") or [])
             + (weather_data.get("limitations") or [])
             + (grazing.get("limitations") or [])
+            + ((stocking or {}).get("limitations") or [])
+            + ((yoy or {}).get("limitations") or [])
+            + ((tenure or {}).get("limitations") or [])
         )
     )
-    if body.history:
-        limitations.append(
-            f"Conversation history ({len(body.history)} messages) was received but not used yet "
-            "(pre-Gemini)."
-        )
 
     advisor = {
         "pasture_data": pasture_data,
         "weather_data": weather_data,
         "grazing_assessment": grazing,
+        "stocking": stocking,
+        "year_over_year": yoy,
+        "tenure_peers": tenure,
+        "intents": intents,
+        "intent_paragraphs": intent_paragraphs,
         "limitations": limitations,
         "confidence": grazing.get("confidence")
         or pasture_data.get("confidence")
@@ -199,6 +246,7 @@ def chat(body: ChatRequest) -> dict[str, Any]:
         farmer_name=body.farmer_name,
         farm_name=body.farm_name,
         land_tenure=body.land_tenure,
+        farm_size_ha=body.farm_size_ha,
     )
 
 
@@ -215,10 +263,17 @@ def dashboard(
     herd_size: Optional[Union[int, str]] = Query(default=None),
     livestock_type: Optional[str] = Query(default=None),
     land_tenure: Optional[str] = Query(default=None),
+    farm_size_ha: Optional[Union[float, str]] = Query(default=None),
 ) -> dict[str, Any]:
     """Compose weather + pasture + decision-support cards for the Farmar home screen."""
     herd = _optional_int(herd_size)
     animal = livestock_type or "cattle"
+    farm_ha = None
+    if farm_size_ha not in (None, ""):
+        try:
+            farm_ha = float(farm_size_ha)
+        except (TypeError, ValueError):
+            farm_ha = None
 
     body = ChatRequest(
         message="dashboard",
@@ -230,6 +285,7 @@ def dashboard(
         herd_size=herd,
         livestock_type=animal,
         land_tenure=land_tenure,
+        farm_size_ha=farm_ha,
     )
     query, resolve_notes = _resolve_location(body)
     if not query:
@@ -252,6 +308,7 @@ def dashboard(
         query,
         herd_size=herd,
         animal_type=animal,
+        farm_size_ha=farm_ha,
         pasture_data=pasture_data,
     )
     result = build_dashboard(

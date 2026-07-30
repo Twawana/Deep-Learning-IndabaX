@@ -113,8 +113,12 @@ def pasture_status_for_ui(pasture_data: dict[str, Any]) -> dict[str, Any]:
         "cover_perennial_grass_pct": metrics.get("cover_perennial_grass_pct"),
         "cover_annual_grass_pct": metrics.get("cover_annual_grass_pct"),
         "cover_bare_ground_pct": metrics.get("cover_bare_ground_pct"),
-        "grazing_pressure": metrics.get("grazing_pressure_recorded"),
-        "carrying_capacity": None,
+        "grazing_pressure": metrics.get("grazing_pressure_recorded")
+        or metrics.get("grazing_pressure_label"),
+        "carrying_capacity": metrics.get("carrying_capacity_ha_per_lsu"),
+        "ndvi": metrics.get("ndvi"),
+        "livestock_density_lsu_per_ha": metrics.get("livestock_density_lsu_per_ha"),
+        "dataset_source": metrics.get("dataset_source"),
         "condition": None,
         "soil_quality": None,
         "grass_type": None,
@@ -225,7 +229,11 @@ def build_dashboard(
         recommendations.insert(0, decision["recommended_action"])
     if grazing.get("confidence") == "low":
         recommendations.append(
-            "Treat advice as provisional - carrying capacity is not in the dataset."
+            "Treat advice as provisional - confidence is low for this assessment."
+        )
+    if pasture_status.get("carrying_capacity") is None:
+        recommendations.append(
+            "Carrying capacity is not available for this location; stocking advice stays qualitative."
         )
 
     if not pasture_data.get("found"):
@@ -258,6 +266,7 @@ def build_chat_response(
     farmer_name: Optional[str] = None,
     farm_name: Optional[str] = None,
     land_tenure: Optional[str] = None,
+    farm_size_ha: Optional[float] = None,
 ) -> dict[str, Any]:
     """Shape POST /chat response expected by the Farmar frontend (pre-Gemini)."""
     from services.decision_service import advisor_prose_from_decision, build_decision
@@ -267,6 +276,11 @@ def build_chat_response(
     pasture_data = advisor.get("pasture_data") or {}
     weather_data = advisor.get("weather_data") or {}
     grazing = advisor.get("grazing_assessment") or {}
+    stocking = advisor.get("stocking") or {}
+    yoy = advisor.get("year_over_year") or {}
+    tenure = advisor.get("tenure_peers") or {}
+    intent_paragraphs = advisor.get("intent_paragraphs") or []
+    intents = advisor.get("intents") or []
     pasture_ui = pasture_status_for_ui(pasture_data)
     weather_ui = weather_status_for_ui(weather_data)
     b2b = _is_b2b_context(
@@ -288,6 +302,9 @@ def build_chat_response(
     prose = advisor_prose_from_decision(
         decision=decision, location=location, message=message
     )
+    if intent_paragraphs:
+        prose = prose + "\n\n" + "\n\n".join(intent_paragraphs)
+
     explainer = decision.get("explainer") or {}
     recommendations = list(
         dict.fromkeys(
@@ -307,17 +324,22 @@ def build_chat_response(
 
     if tier == "free":
         cta = GUEST_LOGIN_CTA if is_guest else FREE_UPGRADE_CTA
+        extra = ("\n\n" + intent_paragraphs[0]) if intent_paragraphs else ""
         short = (
             f"{decision.get('headline')}: {decision.get('recommended_action')}\n\n"
-            f"{(decision.get('grazing_conditions') or {}).get('combined_assessment', '')}\n\n"
+            f"{(decision.get('grazing_conditions') or {}).get('combined_assessment', '')}"
+            f"{extra}\n\n"
             f"{cta}"
         )
         tools_used = [
             {"name": "get_pasture_data", "summary": f"Pasture lookup for {location}"},
             {"name": "get_weather", "summary": f"Weather context for {location}"},
         ]
+        if stocking.get("found"):
+            tools_used.append(
+                {"name": "estimate_safe_stocking", "summary": stocking.get("status")}
+            )
         sources = None
-        # Free still gets a compact decision (action + why checks), not a black box.
         decision_out = {
             "action_priority": decision.get("action_priority"),
             "headline": decision.get("headline"),
@@ -334,8 +356,7 @@ def build_chat_response(
             "Detailed metrics, timeline, and full evidence are available on Premium.",
         ]
         reasoning = (
-            "Short free-tier guidance from pasture and weather signals, "
-            "without detailed technical numbers."
+            "Short free-tier guidance from pasture, weather, and intent-routed dataset tools."
         )
         return {
             "response": short,
@@ -354,6 +375,11 @@ def build_chat_response(
         prose += (
             "\n\nHerd size was not set in your profile — advice is stronger once you add it."
         )
+    if farm_size_ha is None and pasture_ui.get("carrying_capacity") is not None:
+        prose += (
+            "\n\nAdd farm/camp size (hectares) in Profile to turn carrying capacity "
+            "into a safe head-count for your herd."
+        )
 
     tools_used = [
         {"name": "get_pasture_data", "summary": f"Pasture lookup for {location}"},
@@ -363,30 +389,54 @@ def build_chat_response(
             "summary": f"Grazing assessment risk={grazing.get('grazing_risk')}",
         },
     ]
+    if stocking.get("found"):
+        tools_used.append(
+            {
+                "name": "estimate_safe_stocking",
+                "summary": f"status={stocking.get('status')} ha/LSU={stocking.get('carrying_capacity_ha_per_lsu')}",
+            }
+        )
+    if yoy.get("found"):
+        tools_used.append({"name": "compare_to_prior_year", "summary": "Year-over-year pasture"})
+    if tenure.get("found"):
+        tools_used.append({"name": "compare_tenure_nearby", "summary": "Tenure peer compare"})
+
     sources = {
         "pasture": pasture_ui,
         "weather": weather_ui,
         "grazing_assessment": grazing,
+        "stocking": stocking or None,
+        "year_over_year": yoy or None,
+        "tenure_peers": tenure or None,
         "decision": decision,
+        "intents": intents,
     }
+    capacity_note = (
+        "Carrying capacity (ha/LSU) used from synthetic / nearby sites."
+        if pasture_ui.get("carrying_capacity") is not None
+        else "Carrying capacity (ha/LSU) not available for this location."
+    )
     limitations = list(
         dict.fromkeys(
             (advisor.get("limitations") or [])
             + [
-                "Carrying capacity is not available in the dataset.",
+                capacity_note,
                 "Always verify conditions on the ground before moving animals.",
             ]
         )
     )
     reasoning = (
         f"Question: {message}\n"
+        f"Intents: {', '.join(intents) if intents else 'general'}\n"
         f"Location: {location}\n"
         f"Action: {decision.get('action_priority')} ({decision.get('headline')})\n"
         f"Herd size: {herd_size if herd_size is not None else 'not provided'}\n"
+        f"Farm size ha: {farm_size_ha if farm_size_ha is not None else 'not provided'}\n"
         f"Land tenure: {land_tenure or 'unknown'}\n"
         f"Pasture found={pasture_data.get('found')}, confidence={pasture_data.get('confidence')}\n"
         f"Weather found={weather_data.get('found')}, confidence={weather_data.get('confidence')}\n"
         f"Grazing risk={grazing.get('grazing_risk')}, confidence={grazing.get('confidence')}\n"
+        f"Capacity ha/LSU={pasture_ui.get('carrying_capacity')}\n"
         f"B2B context={'yes' if b2b else 'no'}"
     )
 

@@ -28,6 +28,20 @@ class PastureMetrics(BaseModel):
         default=None,
         description="Sum of recorded livestock counts from survey forms when available.",
     )
+    ndvi: Optional[float] = Field(
+        default=None,
+        description="Satellite greenness index when available (synthetic dataset).",
+    )
+    carrying_capacity_ha_per_lsu: Optional[float] = Field(
+        default=None,
+        description="Estimated hectares per LSU when available (synthetic dataset).",
+    )
+    livestock_density_lsu_per_ha: Optional[float] = None
+    grazing_pressure_label: Optional[str] = Field(
+        default=None,
+        description="Categorical grazing pressure (Low/Moderate/High) from synthetic rows.",
+    )
+    dataset_source: Optional[str] = None
 
 
 class PastureResponse(BaseModel):

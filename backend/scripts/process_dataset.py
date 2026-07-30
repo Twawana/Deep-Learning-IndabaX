@@ -603,6 +603,15 @@ def main() -> None:
     ]
     print(advisory[cols].head(8).to_string(index=False))
 
+    # Merge synthetic Numbers/CSV dataset when present (idempotent).
+    synthetic_csv = RAW_DIR / "Namibia_Rangeland_Pasture_Synthetic_Dataset_2.csv"
+    synthetic_numbers = RAW_DIR / "Namibia_Rangeland_Pasture_Synthetic_Dataset_2.numbers"
+    if synthetic_csv.exists() or synthetic_numbers.exists():
+        print("\n=== Merging synthetic dataset ===")
+        import runpy
+
+        runpy.run_path(str(Path(__file__).with_name("convert_and_merge_synthetic.py")), run_name="__main__")
+
 
 if __name__ == "__main__":
     main()

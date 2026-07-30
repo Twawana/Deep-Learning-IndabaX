@@ -12,6 +12,7 @@ import pandas as pd
 
 from models.schemas import PastureMetrics, PastureResponse
 from services import dataset_service
+from services.dataset_bridge import enrich_with_nearby_synthetic
 from services.transparency import (
     confidence_from_limitations,
     is_stale,
@@ -22,7 +23,8 @@ from services.transparency import (
 
 TOOL_DESCRIPTION = (
     "Retrieves rangeland condition information for a Namibian location "
-    "from the processed advisory dataset (biomass, vegetation cover, bush encroachment)."
+    "from Lacuna field plots and/or synthetic regional sites "
+    "(cover, biomass, bush, NDVI, carrying capacity ha/LSU)."
 )
 
 DETAIL_FIELDS = [
@@ -36,12 +38,21 @@ DETAIL_FIELDS = [
     "vegetation_cover",
     "bush_encroachment",
     "grazing_pressure",
+    "grazing_pressure_label",
     "number_cattle",
     "cover_perennial_grass_pct",
     "cover_annual_grass_pct",
     "cover_bare_ground_pct",
     "dominant_herbaceous",
     "dominant_woody",
+    "ndvi",
+    "carrying_capacity_ha_per_lsu",
+    "livestock_density_lsu_per_ha",
+    "dataset_source",
+    "browsing_pressure_label",
+    "bush_encroachment_level",
+    "bush_biomass_kg_per_ha",
+    "grass_biomass_kg_per_ha",
 ]
 
 
@@ -120,6 +131,19 @@ def get_pasture_data(location: str, *, include_history: bool = False) -> dict[st
         grazing_pressure_recorded=_mean(latest["grazing_pressure"])
         if "grazing_pressure" in latest.columns
         else None,
+        ndvi=_mean(latest["ndvi"]) if "ndvi" in latest.columns else None,
+        carrying_capacity_ha_per_lsu=_mean(latest["carrying_capacity_ha_per_lsu"])
+        if "carrying_capacity_ha_per_lsu" in latest.columns
+        else None,
+        livestock_density_lsu_per_ha=_mean(latest["livestock_density_lsu_per_ha"])
+        if "livestock_density_lsu_per_ha" in latest.columns
+        else None,
+        grazing_pressure_label=_first_non_null(latest["grazing_pressure_label"])
+        if "grazing_pressure_label" in latest.columns
+        else None,
+        dataset_source=_first_non_null(latest["dataset_source"])
+        if "dataset_source" in latest.columns
+        else None,
     )
 
     # Most recent observation date across latest plots
@@ -171,16 +195,30 @@ def get_pasture_data(location: str, *, include_history: bool = False) -> dict[st
             f"Location '{query}' mapped via place alias to dataset match '{match_value}'"
         )
 
+    latitude = coords[0] if coords else None
+    longitude = coords[1] if coords else None
+
+    nearby = enrich_with_nearby_synthetic(latitude=latitude, longitude=longitude)
+    # If Lacuna hit lacks capacity/NDVI, lift averages from neighbourhood (keep field metrics primary)
+    if pasture.carrying_capacity_ha_per_lsu is None and nearby.get("carrying_capacity_ha_per_lsu") is not None:
+        pasture.carrying_capacity_ha_per_lsu = nearby.get("carrying_capacity_ha_per_lsu")
+        limitations.append(
+            "Carrying capacity estimated from nearby synthetic sites (not measured on this Lacuna plot)."
+        )
+    if pasture.ndvi is None and nearby.get("ndvi") is not None:
+        pasture.ndvi = nearby.get("ndvi")
+        limitations.append("NDVI estimated from nearby synthetic sites.")
+    if pasture.livestock_density_lsu_per_ha is None and nearby.get("livestock_density_lsu_per_ha") is not None:
+        pasture.livestock_density_lsu_per_ha = nearby.get("livestock_density_lsu_per_ha")
+    if not pasture.grazing_pressure_label and nearby.get("grazing_pressure_label"):
+        pasture.grazing_pressure_label = nearby.get("grazing_pressure_label")
+
     limitations = merge_limitations(limitations)
-    # Pasture field data is rarely "high" confidence for live advice
     confidence = confidence_from_limitations(limitations, high_max=0, medium_max=3)
     if confidence == "high":
         confidence = "medium"
 
-    latitude = coords[0] if coords else None
-    longitude = coords[1] if coords else None
-
-    return PastureResponse(
+    payload = PastureResponse(
         found=True,
         location=query,
         matched_on=matched_on,
@@ -201,3 +239,5 @@ def get_pasture_data(location: str, *, include_history: bool = False) -> dict[st
         limitations=limitations,
         confidence=confidence,  # type: ignore[arg-type]
     ).model_dump()
+    payload["nearby_synthetic"] = nearby
+    return payload

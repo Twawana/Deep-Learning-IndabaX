@@ -318,6 +318,9 @@ def list_sites() -> list[dict[str, Any]]:
         code = None
         if "site_code" in group.columns and group["site_code"].notna().any():
             code = str(group["site_code"].dropna().iloc[0])
+        source = None
+        if "dataset_source" in group.columns and group["dataset_source"].notna().any():
+            source = str(group["dataset_source"].dropna().iloc[0])
         rows.append(
             {
                 "site": str(site),
@@ -327,6 +330,7 @@ def list_sites() -> list[dict[str, Any]]:
                 "longitude": None if pd.isna(lon) else round(float(lon), 5),
                 "vegetation_cover": None if cover is None or pd.isna(cover) else round(float(cover), 2),
                 "biomass": None if biomass is None or pd.isna(biomass) else round(float(biomass), 2),
+                "dataset_source": source,
             }
         )
     rows.sort(key=lambda r: r["site"])

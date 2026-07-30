@@ -2,8 +2,8 @@ export const API_BASE =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 /**
- * Only towns/sites that resolve in the processed Lacuna advisory dataset
- * (exact site or PLACE_ALIASES on the backend).
+ * Towns/sites/regions that resolve in the processed advisory dataset
+ * (Lacuna field sites, place aliases, or synthetic political regions).
  */
 export const NAMIBIA_LOCATIONS = [
   { name: "Gobabis", region: "Omaheke", lat: -22.45, lon: 18.97, mapsTo: "Molly", supported: true },
@@ -29,6 +29,21 @@ export const NAMIBIA_LOCATIONS = [
   { name: "Tiras", region: "Desert - Dwarf Shrub Transition", lat: -26.14, lon: 16.57, mapsTo: "Tiras", supported: true },
   { name: "Uukolonkadhi", region: "Western highland/Western Kalahari", lat: -17.66, lon: 14.31, mapsTo: "Uukolonkadhi", supported: true },
   { name: "Buschpfanne", region: "Dwarf shrub-southern Kalahari transition", lat: -26.84, lon: 19.78, mapsTo: "Buschpfanne", supported: true },
+  // Synthetic political regions (1,200-site starter dataset)
+  { name: "Omaheke", region: "Omaheke", lat: -22.0, lon: 19.5, mapsTo: "Omaheke", supported: true, dataset: "synthetic" },
+  { name: "Khomas", region: "Khomas", lat: -22.6, lon: 17.1, mapsTo: "Khomas", supported: true, dataset: "synthetic" },
+  { name: "Kunene", region: "Kunene", lat: -19.5, lon: 14.5, mapsTo: "Kunene", supported: true, dataset: "synthetic" },
+  { name: "Otjozondjupa", region: "Otjozondjupa", lat: -20.5, lon: 17.5, mapsTo: "Otjozondjupa", supported: true, dataset: "synthetic" },
+  { name: "Erongo", region: "Erongo", lat: -22.0, lon: 15.5, mapsTo: "Erongo", supported: true, dataset: "synthetic" },
+  { name: "Hardap", region: "Hardap", lat: -24.5, lon: 17.5, mapsTo: "Hardap", supported: true, dataset: "synthetic" },
+  { name: "Karas", region: "Karas", lat: -26.5, lon: 18.0, mapsTo: "Karas", supported: true, dataset: "synthetic" },
+  { name: "Omusati", region: "Omusati", lat: -18.0, lon: 15.0, mapsTo: "Omusati", supported: true, dataset: "synthetic" },
+  { name: "Oshana", region: "Oshana", lat: -18.0, lon: 15.8, mapsTo: "Oshana", supported: true, dataset: "synthetic" },
+  { name: "Oshikoto", region: "Oshikoto", lat: -18.5, lon: 16.8, mapsTo: "Oshikoto", supported: true, dataset: "synthetic" },
+  { name: "Ohangwena", region: "Ohangwena", lat: -17.5, lon: 16.5, mapsTo: "Ohangwena", supported: true, dataset: "synthetic" },
+  { name: "Kavango East", region: "Kavango East", lat: -18.0, lon: 20.5, mapsTo: "Kavango East", supported: true, dataset: "synthetic" },
+  { name: "Kavango West", region: "Kavango West", lat: -18.0, lon: 19.0, mapsTo: "Kavango West", supported: true, dataset: "synthetic" },
+  { name: "Zambezi", region: "Zambezi", lat: -17.5, lon: 24.2, mapsTo: "Zambezi", supported: true, dataset: "synthetic" },
 ];
 
 /** Unsupported picker entries kept only for messaging / future aliases */
@@ -69,9 +84,12 @@ export const WATER_SOURCE_OPTIONS = [
 ];
 
 export const CHAT_SUGGESTIONS = [
-  "Can my cattle stay here another week?",
-  "How is pasture looking around Gobabis?",
-  "Will rainfall help my grazing situation?",
+  "Is this camp overgrazed for my herd?",
+  "What is a safe stocking rate here?",
+  "Should I move my herd given recent rainfall?",
+  "How does pasture compare to last year?",
+  "Is bush encroachment getting worse?",
+  "How does my communal land compare nearby?",
 ];
 
 export const DEFAULT_FARM_CONTEXT = {
