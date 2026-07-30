@@ -7,6 +7,7 @@ Run from the backend/ directory:
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -19,6 +20,25 @@ from services import dataset_service
 from tools.registry import list_tool_manifests
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
+
+_DEFAULT_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+]
+
+
+def _cors_origins() -> list[str]:
+    """Comma-separated ALLOWED_ORIGINS for Vercel + local Vite."""
+    configured = [
+        origin.strip()
+        for origin in os.getenv("ALLOWED_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
+    # Always keep local Vite origins for development.
+    return list(dict.fromkeys([*configured, *_DEFAULT_ORIGINS]))
+
 
 app = FastAPI(
     title="Rangeland Advisor API",
@@ -43,12 +63,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:4173",
-        "http://127.0.0.1:4173",
-    ],
+    allow_origins=_cors_origins(),
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
