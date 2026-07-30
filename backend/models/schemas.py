@@ -98,6 +98,17 @@ class WeatherResponse(BaseModel):
     limitations: list[str] = Field(default_factory=list)
     confidence: Confidence = "low"
     message: Optional[str] = None
+    # Accuracy / provenance (optional — filled by weather tool)
+    coordinate_source: Optional[str] = None
+    requested_latitude: Optional[float] = None
+    requested_longitude: Optional[float] = None
+    open_meteo_grid_latitude: Optional[float] = None
+    open_meteo_grid_longitude: Optional[float] = None
+    elevation_m: Optional[float] = None
+    timezone: Optional[str] = None
+    namibia_today: Optional[str] = None
+    recent_source: Optional[str] = None
+    forecast_source: Optional[str] = None
 
 
 class GrazingAssessment(BaseModel):

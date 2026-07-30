@@ -112,7 +112,7 @@ export default function BottomTabBar() {
   }, [activeIndex]);
 
   return (
-    <div className="floating-tab-shell pointer-events-none absolute inset-x-0 bottom-0 z-40 flex justify-center px-4">
+    <div className="floating-tab-shell pointer-events-none absolute inset-x-0 bottom-0 z-[1200] flex justify-center px-4">
       <nav
         className="floating-tab-bar pointer-events-auto"
         aria-label="Primary"

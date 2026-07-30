@@ -63,20 +63,15 @@ export default function Dashboard() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <Link
-          to="/chat"
-          className="flex items-center justify-center rounded-xl bg-veld-800 py-3 text-sm font-semibold text-white active:bg-veld-900"
-        >
-          Ask advisor
-        </Link>
-        <Link
-          to="/scenarios"
-          className="flex items-center justify-center rounded-xl border border-veld-200 bg-white py-3 text-sm font-semibold text-veld-800"
-        >
-          Scenario planner
-        </Link>
-      </div>
+      <Link
+        to="/chat"
+        className="flex w-full items-center justify-center rounded-xl bg-veld-800 py-3 text-sm font-semibold text-white active:bg-veld-900"
+      >
+        Ask advisor
+      </Link>
+      <p className="text-center text-[11px] text-ink-muted">
+        Ask anything — including what-ifs about herd size, rain, or moving camps.
+      </p>
       <Link
         to="/compare"
         className="flex w-full items-center justify-center rounded-xl border border-veld-200 bg-white py-2.5 text-sm font-semibold text-veld-800"

@@ -1,18 +1,14 @@
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet, useLocation, Link } from "react-router-dom";
 import AppHeader from "./AppHeader";
 import BottomTabBar from "./BottomTabBar";
 import { useAuth } from "../context/AuthContext";
-import { Link } from "react-router-dom";
 
 export default function Layout() {
   const { pathname } = useLocation();
   const isChat = pathname === "/chat";
   const { appSettings, isLoggedIn, isAdmin } = useAuth();
   const maintenance = Boolean(appSettings?.maintenanceMode);
-  const showToolLinks =
-    pathname === "/" ||
-    pathname.startsWith("/scenarios") ||
-    pathname.startsWith("/compare");
+  const showToolLinks = pathname === "/" || pathname.startsWith("/compare");
 
   return (
     <div className="app-shell">
@@ -37,16 +33,6 @@ export default function Layout() {
           )}
           {showToolLinks && (
             <div className="flex gap-2 border-b border-veld-100 bg-white px-3 py-2">
-              <Link
-                to="/scenarios"
-                className={`rounded-full px-3 py-1 text-[11px] font-semibold ring-1 ${
-                  pathname.startsWith("/scenarios")
-                    ? "bg-veld-800 text-white ring-veld-800"
-                    : "bg-mist text-veld-800 ring-veld-100"
-                }`}
-              >
-                Scenarios
-              </Link>
               <Link
                 to="/compare"
                 className={`rounded-full px-3 py-1 text-[11px] font-semibold ring-1 ${

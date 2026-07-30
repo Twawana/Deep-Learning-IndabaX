@@ -312,6 +312,16 @@ def list_sites() -> list[dict[str, Any]]:
             if "biomass" in group.columns
             else None
         )
+        ndvi = (
+            pd.to_numeric(group["ndvi"], errors="coerce").mean()
+            if "ndvi" in group.columns
+            else None
+        )
+        bush = (
+            pd.to_numeric(group["bush_encroachment"], errors="coerce").mean()
+            if "bush_encroachment" in group.columns
+            else None
+        )
         region = None
         if "region" in group.columns and group["region"].notna().any():
             region = str(group["region"].dropna().iloc[0])
@@ -330,6 +340,8 @@ def list_sites() -> list[dict[str, Any]]:
                 "longitude": None if pd.isna(lon) else round(float(lon), 5),
                 "vegetation_cover": None if cover is None or pd.isna(cover) else round(float(cover), 2),
                 "biomass": None if biomass is None or pd.isna(biomass) else round(float(biomass), 2),
+                "ndvi": None if ndvi is None or pd.isna(ndvi) else round(float(ndvi), 3),
+                "bush_encroachment": None if bush is None or pd.isna(bush) else round(float(bush), 2),
                 "dataset_source": source,
             }
         )

@@ -22,12 +22,15 @@ export default function ChatBox({
   isLoading,
   onSend,
   disabled = false,
+  suggestions,
+  emptyPrompt = "Ask about your pasture or herd",
 }) {
   const [input, setInput] = useState("");
   const [autoRead, setAutoRead] = useState(false);
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
   const lastSpokenIdRef = useRef(null);
+  const chips = suggestions?.length ? suggestions : CHAT_SUGGESTIONS.slice(0, 3);
 
   const {
     speak,
@@ -119,9 +122,9 @@ export default function ChatBox({
         {messages.length === 0 && !isLoading ? (
           <div className="flex h-full flex-col justify-center gap-2 py-6">
             <p className="mb-1 px-1 text-center text-sm text-ink-muted">
-              Ask about your pasture or herd
+              {emptyPrompt}
             </p>
-            {CHAT_SUGGESTIONS.slice(0, 3).map((suggestion) => (
+            {chips.map((suggestion) => (
               <button
                 key={suggestion}
                 type="button"

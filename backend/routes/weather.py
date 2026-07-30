@@ -14,7 +14,7 @@ router = APIRouter(tags=["weather"])
     "/weather/{region}",
     response_model=WeatherResponse,
     summary="Get rainfall / weather for a location",
-    response_description="Recent rainfall and forecast from Open-Meteo at dataset coordinates.",
+    response_description="Recent rainfall (archive preferred) and forecast from Open-Meteo; lat/lon preferred when provided.",
 )
 def weather_by_region(
     region: str = Path(
@@ -24,10 +24,19 @@ def weather_by_region(
     ),
     forecast_days: int = Query(default=7, ge=1, le=16, description="Forecast horizon in days."),
     past_days: int = Query(default=7, ge=0, le=92, description="Recent history days from Open-Meteo."),
+    lat: float | None = Query(default=None, description="Optional farmer/town latitude (preferred)."),
+    lon: float | None = Query(default=None, description="Optional farmer/town longitude (preferred)."),
 ) -> dict:
     """
-    Resolve coordinates from the processed dataset, then call Open-Meteo (no API key).
+    Resolve a location, then call Open-Meteo (no API key).
 
-    Rainfall is from model grid points at research-plot mean coordinates — not a farm station.
+    Prefer lat/lon when provided so Gobabis town weather is not pulled from Molly
+    research plots ~80 km east. Rainfall is model-grid, not a farm gauge.
     """
-    return get_weather(region, forecast_days=forecast_days, past_days=past_days)
+    return get_weather(
+        region,
+        forecast_days=forecast_days,
+        past_days=past_days,
+        latitude=lat,
+        longitude=lon,
+    )

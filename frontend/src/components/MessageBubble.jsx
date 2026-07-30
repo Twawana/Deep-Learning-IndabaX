@@ -49,6 +49,16 @@ export default function MessageBubble({ message, onSpeak, isSpeaking }) {
           </p>
         )}
 
+        {!isUser && Array.isArray(decision?.what_changed) && decision.what_changed.length > 0 && (
+          <ul className="mb-2 space-y-1 rounded-xl bg-mist px-2.5 py-2">
+            {decision.what_changed.slice(0, 3).map((item) => (
+              <li key={item} className="text-[11px] leading-relaxed text-veld-800">
+                • {item}
+              </li>
+            ))}
+          </ul>
+        )}
+
         <p className="whitespace-pre-wrap text-sm leading-relaxed">
           {message.content}
         </p>

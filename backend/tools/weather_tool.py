@@ -24,17 +24,14 @@ def get_weather(
     *,
     forecast_days: int = 7,
     past_days: int = 7,
+    latitude: float | None = None,
+    longitude: float | None = None,
 ) -> dict[str, Any]:
     """
     Retrieve recent rainfall and forecast for a location/site/region.
 
-    Args:
-        location: Namibian place, research site, site code, or ecoregion.
-        forecast_days: Forward-looking days (1-16).
-        past_days: Recent days from Open-Meteo (0-92).
-
-    Returns:
-        Clean JSON with recent_rainfall, forecast, limitations, and confidence.
+    If latitude/longitude are provided (farmer GPS / town pin), those are preferred
+    for Open-Meteo. Otherwise coordinates come from the matched dataset plots.
     """
     query = (location or "").strip()
     if not query:
@@ -67,7 +64,7 @@ def get_weather(
         ).model_dump()
 
     coords = dataset_service.representative_coordinates(matched)
-    if coords is None:
+    if coords is None and (latitude is None or longitude is None):
         return WeatherResponse(
             found=False,
             location=query,
@@ -78,11 +75,37 @@ def get_weather(
             limitations=["Coordinates unavailable for this region"],
         ).model_dump()
 
-    latitude, longitude, meta = coords
+    dataset_lat = coords[0] if coords else None
+    dataset_lon = coords[1] if coords else None
+    meta = coords[2] if coords else {}
+
+    coordinate_source = "dataset_plot_mean"
+    use_lat = dataset_lat
+    use_lon = dataset_lon
+    if _valid_namibia_coords(latitude, longitude):
+        use_lat = float(latitude)
+        use_lon = float(longitude)
+        coordinate_source = "farmer_gps_or_town_pin"
+
     limitations = [
-        "Rainfall data is from Open-Meteo at the nearest dataset coordinates "
-        "(research plot mean), not a farm weather station"
+        "Rainfall is from Open-Meteo model grids — not a farm rain gauge.",
+        "Recent totals prefer Open-Meteo Archive; forecast is the forecast model.",
     ]
+    if coordinate_source == "farmer_gps_or_town_pin":
+        limitations.append(
+            f"Weather queried at farmer/town coordinates ({use_lat:.4f}, {use_lon:.4f}), "
+            "not the research-plot mean."
+        )
+        if dataset_lat is not None and dataset_lon is not None:
+            limitations.append(
+                f"Nearest dataset plot mean is ({dataset_lat:.4f}, {dataset_lon:.4f}) "
+                "for pasture metrics."
+            )
+    else:
+        limitations.append(
+            "Weather queried at nearest dataset plot-mean coordinates "
+            "(research site), not necessarily the town centre."
+        )
     if matched_on and "alias" in matched_on:
         limitations.append(
             f"Location '{query}' mapped via place alias to dataset match '{match_value}'"
@@ -90,8 +113,8 @@ def get_weather(
 
     try:
         payload = fetch_forecast(
-            latitude,
-            longitude,
+            float(use_lat),
+            float(use_lon),
             forecast_days=forecast_days,
             past_days=past_days,
         )
@@ -104,8 +127,8 @@ def get_weather(
             match_value=match_value,
             site=meta.get("site"),
             region=meta.get("region"),
-            latitude=latitude,
-            longitude=longitude,
+            latitude=use_lat,
+            longitude=use_lon,
             message=str(exc),
             limitations=merge_limitations(limitations),
             confidence="low",
@@ -115,23 +138,29 @@ def get_weather(
     recent_rows = [DailyWeather(**row) for row in payload.get("recent_daily") or []]
     forecast_rows = [DailyWeather(**row) for row in payload.get("forecast_daily") or []]
 
+    gap_notes: list[str] = []
     if not recent_rows:
-        limitations.append("Recent rainfall history unavailable from weather provider")
+        gap_notes.append("Recent rainfall history unavailable from weather provider")
     if not forecast_rows:
-        limitations.append("Forecast rainfall unavailable from weather provider")
+        gap_notes.append("Forecast rainfall unavailable from weather provider")
+    limitations.extend(gap_notes)
 
     limitations = merge_limitations(limitations)
-    confidence = confidence_from_limitations(limitations, high_max=1, medium_max=3)
+    # Transparency boilerplate (model-grid, coord source) should not force "low".
+    # Always at most medium when data exists — this is not a farm rain gauge.
+    confidence = confidence_from_limitations(gap_notes, high_max=0, medium_max=1)
+    if confidence == "high" and (recent_rows or forecast_rows):
+        confidence = "medium"
 
-    return WeatherResponse(
+    result = WeatherResponse(
         found=True,
         location=query,
         matched_on=matched_on,
         match_value=match_value,
         site=meta.get("site"),
         region=meta.get("region"),
-        latitude=float(payload.get("latitude", latitude)),
-        longitude=float(payload.get("longitude", longitude)),
+        latitude=float(payload.get("latitude", use_lat)),
+        longitude=float(payload.get("longitude", use_lon)),
         recent_rainfall=RainfallSummary(
             days=len(recent_rows),
             total_precipitation_mm=payload.get("total_recent_precipitation_mm"),
@@ -146,3 +175,26 @@ def get_weather(
         limitations=limitations,
         confidence=confidence,  # type: ignore[arg-type]
     ).model_dump()
+    result["coordinate_source"] = coordinate_source
+    result["requested_latitude"] = use_lat
+    result["requested_longitude"] = use_lon
+    result["open_meteo_grid_latitude"] = payload.get("latitude")
+    result["open_meteo_grid_longitude"] = payload.get("longitude")
+    result["elevation_m"] = payload.get("elevation_m")
+    result["timezone"] = payload.get("timezone")
+    result["namibia_today"] = payload.get("namibia_today")
+    result["recent_source"] = payload.get("recent_source")
+    result["forecast_source"] = payload.get("forecast_source")
+    return result
+
+
+def _valid_namibia_coords(lat: float | None, lon: float | None) -> bool:
+    if lat is None or lon is None:
+        return False
+    try:
+        lat_f = float(lat)
+        lon_f = float(lon)
+    except (TypeError, ValueError):
+        return False
+    # Rough Namibia bounding box
+    return -29.5 <= lat_f <= -16.5 and 11.5 <= lon_f <= 25.5

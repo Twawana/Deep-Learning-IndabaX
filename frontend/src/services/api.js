@@ -120,8 +120,8 @@ export async function getRangeland(location, extra = {}) {
 
 /**
  * GET /weather/{region}
- * Prefers location/region name (backend resolves coordinates from dataset).
- * Falls back to nearest_town / location query param if lat/lon-only callers pass extras.location.
+ * Passes farm/town lat/lon when available so Open-Meteo uses the pin, not only
+ * research-plot means (e.g. Gobabis town vs Molly ~80 km east).
  */
 export async function getWeather(lat, lon, extra = {}) {
   const region = (
@@ -131,7 +131,6 @@ export async function getWeather(lat, lon, extra = {}) {
     ""
   ).trim();
 
-  // Never invent a town. Backend weather resolves coordinates from the dataset.
   if (!region) {
     const err = new Error(
       "Weather requires a supported town or research site."
@@ -140,12 +139,18 @@ export async function getWeather(lat, lon, extra = {}) {
   }
 
   const pastDays = extra.past_days ?? 7;
-  const { data } = await api.get(`/weather/${encodeRegion(region)}`, {
-    params: {
-      forecast_days: extra.forecast_days ?? Math.min(Number(extra.days) || 7, 16),
-      past_days: pastDays,
-    },
-  });
+  const params = {
+    forecast_days: extra.forecast_days ?? Math.min(Number(extra.days) || 7, 16),
+    past_days: pastDays,
+  };
+  const latNum = lat != null && lat !== "" ? Number(lat) : NaN;
+  const lonNum = lon != null && lon !== "" ? Number(lon) : NaN;
+  if (Number.isFinite(latNum) && Number.isFinite(lonNum)) {
+    params.lat = latNum;
+    params.lon = lonNum;
+  }
+
+  const { data } = await api.get(`/weather/${encodeRegion(region)}`, { params });
 
   if (!data?.found) {
     const err = new Error(data?.message || "Region not found");
@@ -172,6 +177,14 @@ export async function getWeather(lat, lon, extra = {}) {
   const recentLabel =
     recentTotal == null ? null : `${recentTotal} mm (last ${recentDays} days)`;
 
+  const coordSource = data.coordinate_source;
+  const coordLabel =
+    coordSource === "farmer_gps_or_town_pin"
+      ? "Town / farm pin"
+      : coordSource === "dataset_plot_mean"
+        ? "Research plot mean"
+        : null;
+
   return {
     ...data,
     temperature,
@@ -184,10 +197,12 @@ export async function getWeather(lat, lon, extra = {}) {
     forecast_total_mm: forecastTotal,
     drought_indicator: null,
     source: data.source || "open-meteo",
+    recent_source: data.recent_source,
+    forecast_source: data.forecast_source,
+    coordinate_source_label: coordLabel,
     forecast: forecastDaily,
     confidence: data.confidence,
     limitations: data.limitations || [],
-    // preserve raw coords from backend (dataset), not the phone GPS
     lat: data.latitude,
     lon: data.longitude,
   };

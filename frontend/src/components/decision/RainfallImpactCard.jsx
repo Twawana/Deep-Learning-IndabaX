@@ -100,7 +100,20 @@ export default function RainfallImpactCard({
                   value={details.temperature || weather?.temperature}
                 />
                 <Detail label="Near-term rain" value={weather?.rainfall} />
-                <Detail label="Source" value={weather?.source || "open-meteo"} />
+                <Detail
+                  label="Coords used"
+                  value={
+                    weather?.coordinate_source_label ||
+                    (weather?.latitude != null && weather?.longitude != null
+                      ? `${Number(weather.latitude).toFixed(3)}, ${Number(weather.longitude).toFixed(3)}`
+                      : null)
+                  }
+                />
+                <Detail
+                  label="Recent source"
+                  value={weather?.recent_source || weather?.source || "open-meteo"}
+                />
+                <Detail label="Forecast source" value={weather?.forecast_source} />
               </dl>
             )}
           </>

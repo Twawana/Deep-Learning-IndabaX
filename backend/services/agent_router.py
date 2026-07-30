@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from typing import Any, Optional
 
+from services.scenario_parser import is_scenario_question
+
 
 def detect_intents(message: str) -> list[str]:
     text = (message or "").strip().lower()
@@ -17,6 +19,14 @@ def detect_intents(message: str) -> list[str]:
 
     def has(*patterns: str) -> bool:
         return any(re.search(p, text) for p in patterns)
+
+    if is_scenario_question(text) or has(
+        r"\bwhat\s*if\b",
+        r"\bsuppose\b",
+        r"\bscenario\b",
+        r"\bif\s+i\s+(had|have|add|reduce|move|double|halve)\b",
+    ):
+        intents.append("scenario")
 
     if has(
         r"carrying\s*capacit",
@@ -94,10 +104,15 @@ def build_intent_answer(
     stocking: Optional[dict[str, Any]] = None,
     yoy: Optional[dict[str, Any]] = None,
     tenure: Optional[dict[str, Any]] = None,
+    scenario: Optional[dict[str, Any]] = None,
 ) -> list[str]:
     """Extra plain-language paragraphs for the chat response."""
     parts: list[str] = []
-    if stocking and stocking.get("found") and "stocking" in intents:
+    if scenario and scenario.get("found") and "scenario" in intents:
+        parts.append(scenario.get("farmer_summary") or "")
+        if scenario.get("disclaimer"):
+            parts.append(scenario["disclaimer"])
+    if stocking and stocking.get("found") and "stocking" in intents and "scenario" not in intents:
         parts.append(stocking.get("advice") or "")
     if yoy and yoy.get("found") and ("yoy" in intents or "bush" in intents):
         parts.append(yoy.get("summary") or "")

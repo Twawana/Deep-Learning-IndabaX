@@ -16,6 +16,8 @@ from tools.history_tool import TOOL_DESCRIPTION as HISTORY_DESCRIPTION
 from tools.history_tool import compare_to_prior_year
 from tools.pasture_tool import TOOL_DESCRIPTION as PASTURE_DESCRIPTION
 from tools.pasture_tool import get_pasture_data
+from tools.scenario_tool import TOOL_DESCRIPTION as SCENARIO_DESCRIPTION
+from tools.scenario_tool import run_what_if_scenario
 from tools.stocking_tool import TOOL_DESCRIPTION as STOCKING_DESCRIPTION
 from tools.stocking_tool import estimate_safe_stocking
 from tools.tenure_tool import TOOL_DESCRIPTION as TENURE_DESCRIPTION
@@ -111,6 +113,26 @@ GEMINI_TOOLS: list[dict[str, Any]] = [
             "required": ["location"],
         },
         "callable": compare_tenure_nearby,
+    },
+    {
+        "name": "run_what_if_scenario",
+        "description": SCENARIO_DESCRIPTION,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "location": {"type": "string"},
+                "question": {
+                    "type": "string",
+                    "description": "Free-form what-if question from the farmer.",
+                },
+                "current_herd_size": {"type": "integer"},
+                "animal_type": {"type": "string"},
+                "farm_size_ha": {"type": "number"},
+                "land_tenure": {"type": "string"},
+            },
+            "required": ["location", "question"],
+        },
+        "callable": run_what_if_scenario,
     },
     {
         "name": "compare_locations",

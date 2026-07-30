@@ -96,6 +96,20 @@
 
   .floating-tab-shell {
     padding-bottom: max(0.85rem, calc(env(safe-area-inset-bottom) + 0.45rem));
+    /* Keep above Leaflet panes/controls (often z-index 400–1000). */
+    z-index: 1200;
+  }
+
+  /* Contain map stacking so tiles/markers never cover the tab bar or header. */
+  .grazing-map-shell {
+    position: relative;
+    z-index: 0;
+    isolation: isolate;
+    overflow: hidden;
+  }
+
+  .grazing-map-shell .leaflet-container {
+    z-index: 0;
   }
 
   .floating-tab-bar {

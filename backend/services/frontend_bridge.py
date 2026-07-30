@@ -279,6 +279,7 @@ def build_chat_response(
     stocking = advisor.get("stocking") or {}
     yoy = advisor.get("year_over_year") or {}
     tenure = advisor.get("tenure_peers") or {}
+    scenario = advisor.get("scenario") or {}
     intent_paragraphs = advisor.get("intent_paragraphs") or []
     intents = advisor.get("intents") or []
     pasture_ui = pasture_status_for_ui(pasture_data)
@@ -298,12 +299,22 @@ def build_chat_response(
         land_tenure=land_tenure,
         herd_size=herd_size,
     )
+    # For what-if questions, surface the scenario decision as the primary card
+    if scenario.get("found") and scenario.get("scenario"):
+        decision = dict(scenario["scenario"])
+        if scenario.get("what_changed"):
+            decision["what_changed"] = scenario["what_changed"]
+        if scenario.get("parsed"):
+            decision["parsed_assumptions"] = scenario["parsed"].get("assumptions")
 
-    prose = advisor_prose_from_decision(
-        decision=decision, location=location, message=message
-    )
-    if intent_paragraphs:
-        prose = prose + "\n\n" + "\n\n".join(intent_paragraphs)
+    if scenario.get("found") and scenario.get("farmer_summary"):
+        prose = scenario["farmer_summary"]
+    else:
+        prose = advisor_prose_from_decision(
+            decision=decision, location=location, message=message
+        )
+        if intent_paragraphs:
+            prose = prose + "\n\n" + "\n\n".join(intent_paragraphs)
 
     explainer = decision.get("explainer") or {}
     recommendations = list(
@@ -324,22 +335,32 @@ def build_chat_response(
 
     if tier == "free":
         cta = GUEST_LOGIN_CTA if is_guest else FREE_UPGRADE_CTA
-        extra = ("\n\n" + intent_paragraphs[0]) if intent_paragraphs else ""
-        short = (
-            f"{decision.get('headline')}: {decision.get('recommended_action')}\n\n"
-            f"{(decision.get('grazing_conditions') or {}).get('combined_assessment', '')}"
-            f"{extra}\n\n"
-            f"{cta}"
-        )
+        if scenario.get("found") and scenario.get("farmer_summary"):
+            short = f"{scenario['farmer_summary']}\n\n{cta}"
+        else:
+            extra = ("\n\n" + intent_paragraphs[0]) if intent_paragraphs else ""
+            short = (
+                f"{decision.get('headline')}: {decision.get('recommended_action')}\n\n"
+                f"{(decision.get('grazing_conditions') or {}).get('combined_assessment', '')}"
+                f"{extra}\n\n"
+                f"{cta}"
+            )
         tools_used = [
             {"name": "get_pasture_data", "summary": f"Pasture lookup for {location}"},
             {"name": "get_weather", "summary": f"Weather context for {location}"},
         ]
-        if stocking.get("found"):
+        if scenario.get("found"):
+            tools_used.append(
+                {"name": "run_what_if_scenario", "summary": "Compared current vs what-if"}
+            )
+        if stocking.get("found") and "scenario" not in intents:
             tools_used.append(
                 {"name": "estimate_safe_stocking", "summary": stocking.get("status")}
             )
-        sources = None
+        sources = {
+            "scenario": scenario or None,
+            "intents": intents,
+        } if scenario.get("found") else None
         decision_out = {
             "action_priority": decision.get("action_priority"),
             "headline": decision.get("headline"),
@@ -350,6 +371,7 @@ def build_chat_response(
                 "checks": explainer.get("checks"),
             },
             "confidence": decision.get("confidence"),
+            "what_changed": scenario.get("what_changed") if scenario else None,
         }
         limitations = [
             "Free plan: short guidance only.",
@@ -389,6 +411,13 @@ def build_chat_response(
             "summary": f"Grazing assessment risk={grazing.get('grazing_risk')}",
         },
     ]
+    if scenario.get("found"):
+        tools_used.append(
+            {
+                "name": "run_what_if_scenario",
+                "summary": f"what-if → {scenario.get('scenario', {}).get('headline')}",
+            }
+        )
     if stocking.get("found"):
         tools_used.append(
             {
@@ -408,6 +437,7 @@ def build_chat_response(
         "stocking": stocking or None,
         "year_over_year": yoy or None,
         "tenure_peers": tenure or None,
+        "scenario": scenario or None,
         "decision": decision,
         "intents": intents,
     }

@@ -18,6 +18,7 @@ from services.frontend_bridge import build_chat_response, build_dashboard
 from tools.grazing_tool import calculate_grazing_pressure
 from tools.history_tool import compare_to_prior_year
 from tools.pasture_tool import get_pasture_data
+from tools.scenario_tool import run_what_if_scenario
 from tools.stocking_tool import estimate_safe_stocking
 from tools.tenure_tool import compare_tenure_nearby
 from tools.weather_tool import get_weather
@@ -182,7 +183,17 @@ def chat(body: ChatRequest) -> dict[str, Any]:
     stocking = None
     yoy = None
     tenure = None
-    if "stocking" in intents or "general" in intents:
+    scenario = None
+    if "scenario" in intents:
+        scenario = run_what_if_scenario(
+            location,
+            body.message,
+            current_herd_size=body.herd_size,
+            livestock_type=animal,
+            land_tenure=body.land_tenure,
+            farm_size_ha=body.farm_size_ha,
+        )
+    if "stocking" in intents or ("general" in intents and "scenario" not in intents):
         stocking = estimate_safe_stocking(
             location,
             herd_size=body.herd_size,
@@ -205,6 +216,7 @@ def chat(body: ChatRequest) -> dict[str, Any]:
         stocking=stocking,
         yoy=yoy,
         tenure=tenure,
+        scenario=scenario,
     )
 
     limitations = list(
@@ -216,6 +228,7 @@ def chat(body: ChatRequest) -> dict[str, Any]:
             + ((stocking or {}).get("limitations") or [])
             + ((yoy or {}).get("limitations") or [])
             + ((tenure or {}).get("limitations") or [])
+            + ([scenario["disclaimer"]] if scenario and scenario.get("disclaimer") else [])
         )
     )
 
@@ -226,6 +239,7 @@ def chat(body: ChatRequest) -> dict[str, Any]:
         "stocking": stocking,
         "year_over_year": yoy,
         "tenure_peers": tenure,
+        "scenario": scenario,
         "intents": intents,
         "intent_paragraphs": intent_paragraphs,
         "limitations": limitations,

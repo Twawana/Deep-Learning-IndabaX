@@ -23,10 +23,6 @@ const SCREENS = {
     title: "Rainfall",
     hint: (farm) => farm.location,
   },
-  "/scenarios": {
-    title: "Scenario planner",
-    hint: (farm) => farm.location,
-  },
   "/compare": {
     title: "Compare camps",
     hint: () => "Side-by-side grazing advice",
@@ -44,7 +40,6 @@ const SCREENS = {
 
 function resolveScreen(pathname) {
   if (SCREENS[pathname]) return SCREENS[pathname];
-  if (pathname.startsWith("/scenarios")) return SCREENS["/scenarios"];
   if (pathname.startsWith("/compare")) return SCREENS["/compare"];
   if (pathname.startsWith("/admin")) return SCREENS["/admin"];
   return SCREENS["/"];
@@ -70,7 +65,7 @@ export default function AppHeader({ action }) {
   const hint = display.hint(farm);
 
   return (
-    <header className="safe-top sticky top-0 z-30 border-b border-veld-100/80 bg-white/90 px-4 py-3 backdrop-blur-xl">
+    <header className="safe-top sticky top-0 z-[1100] border-b border-veld-100/80 bg-white/90 px-4 py-3 backdrop-blur-xl">
       <div className="flex items-center justify-between gap-3">
         <div
           className={`min-w-0 transition-all duration-200 ease-out ${
