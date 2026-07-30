@@ -1,5 +1,5 @@
 """
-Tool registry for In Vision (Gemini agentic tool-calling).
+Tool registry for Vision (Gemini agentic tool-calling).
 
 Exposes schemas + Python callables. The LLM / planner decides which tools to invoke;
 this module does not call Gemini itself.

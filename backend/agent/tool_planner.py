@@ -73,8 +73,9 @@ def plan_tools(
         }
 
     if intent == INTENT_PASTURE:
+        # Offline/heuristic path only — do not auto-attach weather.
         return {
-            "tools": ["get_pasture_data", "get_weather"],
+            "tools": ["get_pasture_data"],
             "ask_clarification": False,
             "clarification_focus": [],
             "allow_recommendation": False,
@@ -88,6 +89,17 @@ def plan_tools(
             "clarification_focus": [],
             "allow_recommendation": False,
             "strategy": "trend",
+        }
+
+    # Keyword safety net — bush / stocking even if intent was coarse
+    text_l = (message or "").lower()
+    if any(k in text_l for k in ("bush", "encroach", "woody", "last year", "getting worse")):
+        return {
+            "tools": ["compare_to_prior_year", "get_pasture_data"],
+            "ask_clarification": False,
+            "clarification_focus": [],
+            "allow_recommendation": False,
+            "strategy": "bush_trend",
         }
 
     if intent == INTENT_TENURE:
@@ -119,9 +131,23 @@ def plan_tools(
 
     if intent in {INTENT_DECISION, INTENT_HERD} or wants_rec:
         missing = missing_for_decision(context)
-        # Soft clarification: still pull pasture+weather so we can teach,
-        # but ask for herd before hard stocking advice.
-        tools = ["get_pasture_data", "get_weather"]
+        # Heuristic fallback only (online path lets Gemini choose tools).
+        # Start with pasture; add weather only if the question mentions rain/forecast.
+        text = (message or "").lower()
+        tools = ["get_pasture_data"]
+        if any(
+            k in text
+            for k in (
+                "rain",
+                "rainfall",
+                "weather",
+                "forecast",
+                "drought",
+                "wet",
+                "dry spell",
+            )
+        ):
+            tools.append("get_weather")
         if "herd_size" not in missing:
             tools.extend(["calculate_grazing_pressure", "estimate_safe_stocking"])
         return {

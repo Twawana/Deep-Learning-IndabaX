@@ -1,7 +1,7 @@
 """
 Frontend-facing chat + dashboard routes.
 
-Online: Oryx (Gemini) with agentic tool-calling — model chooses pasture vs weather tools.
+Online: Vision (Gemini) with agentic tool-calling — model chooses pasture vs weather tools.
 Offline: local advisory dataset tools only (no Gemini, no Open-Meteo).
 """
 
@@ -22,6 +22,7 @@ from services.agent_router import (
 from services.dataset_bridge import is_political_region
 from services.frontend_bridge import build_chat_response, build_dashboard
 from services.gemini_agent import AGENT_NAME, gemini_configured, is_online, run_vision_agent
+from services.offline_advisor import run_offline_advisor
 from tools.grazing_tool import calculate_grazing_pressure
 from tools.history_tool import compare_to_prior_year
 from tools.pasture_tool import get_pasture_data
@@ -159,7 +160,7 @@ def _greeting_response(
     user_tier: str,
     is_guest: bool,
 ) -> dict[str, Any]:
-    """Friendly Oryx reply for hi/hello — no tools, no decision card."""
+    """Friendly Vision reply for hi/hello — no tools, no decision card."""
     name = (farmer_name or "").strip()
     hello = f"Hi {name}!" if name else "Hi!"
     place = f" for {location}" if location else ""
@@ -183,23 +184,42 @@ def _greeting_response(
         "user_tier": tier,
         "agent": AGENT_NAME,
         "mode": "greeting",
+        "data_source": {
+            "kind": "online",
+            "mode": "online",
+            "label": "Online data",
+            "detail": "Vision greeting — no dataset or weather tools used.",
+            "used": ["vision_ai"],
+        },
+        "assistant": {
+            "name": AGENT_NAME,
+            "powered_by": "local",
+            "mode": "greeting",
+            "data_source": {
+                "kind": "online",
+                "mode": "online",
+                "label": "Online data",
+                "detail": "Vision greeting — no dataset or weather tools used.",
+                "used": ["vision_ai"],
+            },
+        },
     }
 
 
 @router.post(
     "/chat",
-    summary="Oryx farmer chat (agentic Gemini + tools)",
-    response_description="Plain-language Oryx answer; online uses agentic tool-calling.",
+    summary="Vision farmer chat (agentic Gemini + tools)",
+    response_description="Plain-language Vision answer; online uses model-chosen tools.",
 )
 def chat(body: ChatRequest) -> dict[str, Any]:
     """
-    In Vision Ask endpoint — Planner → Executor → Advisor when possible.
+    Vision Ask endpoint.
 
-    Online + Gemini: selective tool use via agent pipeline (or Oryx agent fallback).
-    Offline: local advisory dataset only.
+    Online + Gemini: the model decides whether to query the dataset, call weather,
+    both, or neither (no fixed tool script).
+    Offline / Gemini down: local NLU understands the question, then fetches the
+    right rows from the local advisory dataset (no LLM required).
     """
-    from agent.pipeline import run_pipeline
-
     if is_greeting(body.message):
         location, _ = _resolve_location(body)
         return _greeting_response(
@@ -228,47 +248,29 @@ def chat(body: ChatRequest) -> dict[str, Any]:
     use_farm_tools = needs_farm_tools(body.message, intents)
     tier = "free" if body.is_guest else (body.user_tier or "free")
 
-    # Prefer In Vision reasoning pipeline (selective tools, no forced move cards).
-    try:
-        piped = run_pipeline(
+    # --- Online: Vision (Gemini) decides dataset vs weather vs neither ---
+    if online and gemini_configured():
+        vision = run_vision_agent(
             message=body.message,
             location=location,
-            tier=tier,
+            user_tier=body.user_tier or "free",
+            is_guest=bool(body.is_guest),
             herd_size=body.herd_size,
             livestock_type=animal,
-            farm_size_ha=body.farm_size_ha,
-            land_tenure=body.land_tenure,
-            farm_notes=body.farm_notes,
             farmer_name=body.farmer_name,
             farm_name=body.farm_name,
-            lat=body.lat,
-            lon=body.lon,
-            history=body.history or [],
-            resolve_notes=resolve_notes,
+            land_tenure=body.land_tenure,
+            farm_size_ha=body.farm_size_ha,
+            history=body.history,
+            require_online=True,
         )
-        if piped.get("ok") and piped.get("text"):
-            advisor = piped.get("advisor_payload") or {
-                "intents": [(piped.get("intent") or {}).get("intent") or intents],
+        if vision:
+            advisor = {
+                "intents": intents,
                 "mode": mode,
                 "limitations": list(resolve_notes),
+                "tools_used": vision.get("tools_used") or [],
             }
-            advisor["mode"] = mode
-            vision = {
-                "response": piped["text"],
-                "reasoning": str((piped.get("reasoning") or {}).get("reasoning") or ""),
-                "model": piped.get("model"),
-                "tools_used": piped.get("tools_used") or [],
-                "agent": piped.get("assistant") or AGENT_NAME,
-                "mode": mode,
-            }
-            # Only attach decision evidence when pipeline says a recommendation is appropriate
-            if not piped.get("include_decision"):
-                advisor = {
-                    **advisor,
-                    "pasture_data": advisor.get("pasture_data") or {},
-                    "weather_data": advisor.get("weather_data") or {},
-                    "grazing_assessment": advisor.get("grazing_assessment") or {},
-                }
             return build_chat_response(
                 message=body.message,
                 location=location,
@@ -283,49 +285,6 @@ def chat(body: ChatRequest) -> dict[str, Any]:
                 land_tenure=body.land_tenure,
                 farm_size_ha=body.farm_size_ha,
                 vision_override=vision,
-            )
-    except Exception as exc:  # noqa: BLE001 — fall through to Oryx / local tools
-        import logging
-
-        logging.getLogger(__name__).warning("Chat pipeline failed: %s", exc)
-
-    # --- Online: Oryx agentically chooses tools (fallback) ---
-    if online and gemini_configured():
-        oryx = run_vision_agent(
-            message=body.message,
-            location=location,
-            user_tier=body.user_tier or "free",
-            is_guest=bool(body.is_guest),
-            herd_size=body.herd_size,
-            livestock_type=animal,
-            farmer_name=body.farmer_name,
-            farm_name=body.farm_name,
-            land_tenure=body.land_tenure,
-            farm_size_ha=body.farm_size_ha,
-            history=body.history,
-            require_online=True,
-        )
-        if oryx:
-            advisor = {
-                "intents": intents,
-                "mode": mode,
-                "limitations": list(resolve_notes),
-                "tools_used": oryx.get("tools_used") or [],
-            }
-            return build_chat_response(
-                message=body.message,
-                location=location,
-                advisor=advisor,
-                user_tier=body.user_tier or "free",
-                is_guest=bool(body.is_guest),
-                herd_size=body.herd_size,
-                livestock_type=animal,
-                farm_notes=body.farm_notes,
-                farmer_name=body.farmer_name,
-                farm_name=body.farm_name,
-                land_tenure=body.land_tenure,
-                farm_size_ha=body.farm_size_ha,
-                vision_override=oryx,
             )
 
         if not use_farm_tools:
@@ -353,7 +312,63 @@ def chat(body: ChatRequest) -> dict[str, Any]:
                 "mode": "online",
             }
 
-    # Offline basic questions: no Gemini, no invented farm card
+    # --- Offline OR Gemini unavailable: local NLU + dataset tools ---
+    # Understands the question without Gemini, then fetches the right DB rows.
+    use_local_nlu = (not online) or use_farm_tools
+    if use_local_nlu:
+        try:
+            local = run_offline_advisor(
+                message=body.message,
+                location=location,
+                tier=tier,
+                herd_size=body.herd_size,
+                livestock_type=animal,
+                farm_size_ha=body.farm_size_ha,
+                land_tenure=body.land_tenure,
+                farm_notes=body.farm_notes,
+                farmer_name=body.farmer_name,
+                farm_name=body.farm_name,
+                lat=body.lat,
+                lon=body.lon,
+                history=body.history or [],
+                resolve_notes=resolve_notes,
+            )
+            if local.get("ok") and local.get("response"):
+                advisor = local.get("advisor_payload") or {
+                    "intents": intents,
+                    "mode": mode,
+                    "limitations": list(resolve_notes),
+                }
+                advisor["mode"] = mode
+                vision = {
+                    "response": local["response"],
+                    "reasoning": local.get("reasoning") or "",
+                    "model": local.get("model"),
+                    "tools_used": local.get("tools_used") or [],
+                    "agent": local.get("agent") or AGENT_NAME,
+                    "mode": mode,
+                }
+                return build_chat_response(
+                    message=body.message,
+                    location=location,
+                    advisor=advisor,
+                    user_tier=body.user_tier or "free",
+                    is_guest=bool(body.is_guest),
+                    herd_size=body.herd_size,
+                    livestock_type=animal,
+                    farm_notes=body.farm_notes,
+                    farmer_name=body.farmer_name,
+                    farm_name=body.farm_name,
+                    land_tenure=body.land_tenure,
+                    farm_size_ha=body.farm_size_ha,
+                    vision_override=vision,
+                )
+        except Exception as exc:  # noqa: BLE001
+            import logging
+
+            logging.getLogger(__name__).warning("Offline advisor failed: %s", exc)
+
+    # Offline basic questions with no farm intent
     if not online and not use_farm_tools:
         tier = "free" if body.is_guest else (
             "premium"
@@ -378,9 +393,40 @@ def chat(body: ChatRequest) -> dict[str, Any]:
             "mode": "offline",
         }
 
-    # --- Offline farm asks (or online farm asks after Gemini fail): local tools ---
+    # --- Last-resort local tools (selective weather) ---
+    msg_l = (body.message or "").lower()
+    wants_weather = (
+        "weather" in intents
+        or "rainfall" in intents
+        or any(
+            k in msg_l
+            for k in (
+                "rain",
+                "rainfall",
+                "weather",
+                "forecast",
+                "drought",
+                "how long",
+                "move",
+                "stay",
+                "dry",
+            )
+        )
+    )
+    # Decision / herd questions need weather for a stay-window estimate
+    if use_farm_tools and online:
+        wants_weather = True
     pasture_data = get_pasture_data(location)
-    weather_data = get_weather(location)
+    weather_data = (
+        get_weather(location)
+        if (online and wants_weather)
+        else {
+            "found": False,
+            "skipped": True,
+            "reason": "Weather not requested for this question (or offline).",
+            "limitations": ["Live weather not queried for this ask."],
+        }
+    )
     grazing = calculate_grazing_pressure(
         location,
         herd_size=body.herd_size,

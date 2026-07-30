@@ -34,7 +34,7 @@ app = FastAPI(
         "- `GET /compare` — compare two locations\n"
         "- `GET /tools` — Gemini-ready tool manifests\n\n"
         "### Farmar frontend adapters\n"
-        "- `POST /chat` — Oryx agent (Gemini tool-calling) + Farmar response\n"
+        "- `POST /chat` — Vision agent (Gemini tool-calling) + Farmar response\n"
         "- `GET /dashboard` — Home screen aggregate\n"
         "- `POST /sync/push` — device offline queue → Supabase PostgreSQL\n"
     ),

@@ -1,9 +1,9 @@
 """
-Oryx — Gemini-powered Namibian rangeland advisor with agentic tool-calling.
+Vision — Gemini-powered Namibian rangeland advisor with agentic tool-calling.
 
 The model decides which tools to call (pasture dataset, Open-Meteo weather,
-grazing, stocking, etc.). Offline callers should skip this module and use
-local dataset tools only.
+grazing, stocking, etc.). There is no fixed script that always hits both.
+Offline callers should skip this module and use local dataset tools only.
 """
 
 from __future__ import annotations
@@ -19,22 +19,21 @@ from tools.registry import GEMINI_TOOLS
 
 logger = logging.getLogger(__name__)
 
-AGENT_NAME = "Oryx"
+AGENT_NAME = "Vision"
 MAX_TOOL_ROUNDS = 6
 MAX_TOOL_RESULT_CHARS = 8000
 
-ORYX_SYSTEM_PROMPT = """You are Oryx, a Namibian-themed rangeland advisor for livestock farmers.
-Oryx is Namibia's national animal — resilient in dry land, like the farmers you serve.
+VISION_SYSTEM_PROMPT = """You are Vision, a Namibian rangeland advisor for livestock farmers.
 
 YOUR JOB
 - Help farmers with grazing, pasture condition, rainfall, stocking, and herd moves.
-- You have tools. YOU decide when to call them — do not wait for a script.
-- For site-specific questions (this camp, my pasture, rainfall here, should I move,
-  how many animals, what-if herd changes): call the relevant tools first.
-- For basic/general questions (what is NDVI, what is carrying capacity, how does
-  rotation work): answer from knowledge — usually no tools needed.
-- Prefer get_pasture_data for vegetation/cover/biomass from the local dataset.
-- Prefer get_weather for live rainfall/forecast (Open-Meteo).
+- You have tools. YOU alone decide when to call them — never follow a fixed script.
+- Do NOT call get_pasture_data and get_weather together by default.
+  Call get_pasture_data only when you need dataset pasture/cover/biomass/site condition.
+  Call get_weather only when you need live rainfall, forecast, or recent rain context.
+  Call neither for greetings, definitions, or general education.
+  Call both only when the farmer's question truly needs BOTH pasture evidence AND live weather.
+- For site-specific farm decisions, call only the tools that question requires.
 - Use calculate_grazing_pressure / estimate_safe_stocking when herd size matters.
 - Use run_what_if_scenario for "what if …" questions.
 - Never invent pasture or rainfall numbers. If a tool fails or returns found=false,
@@ -42,16 +41,19 @@ YOUR JOB
 
 RESPONSE STYLE
 - Clear plain English a working farmer can use.
-- State reasoning: e.g. "Based on grazing pressure X and recent rainfall Y…"
+- State reasoning grounded in whichever tools you actually used.
 - Avoid definitive claims the data cannot support. Use "suggests", "likely", "based on".
-- Free tier (USER_TIER=free): keep it short. One Premium upgrade nudge only for farm advice.
+- Free tier (USER_TIER=free): keep it short. Do not add login or Premium upgrade marketing lines.
 - Premium: fuller analysis and next actions.
 - Do not invent UI badges like "Monitor Closely".
 
 IDENTITY
-- Your name is Oryx.
+- Your name is Vision.
 - Speak as a practical veld advisor for Namibia.
 """
+
+# Backwards-compatible alias
+ORYX_SYSTEM_PROMPT = VISION_SYSTEM_PROMPT
 
 
 def gemini_configured() -> bool:
@@ -245,9 +247,10 @@ def run_vision_agent(
     grounded: bool = True,  # unused — model decides tools
 ) -> Optional[dict[str, Any]]:
     """
-    Run Oryx with Gemini agentic tool-calling.
+    Run Vision with Gemini agentic tool-calling.
 
-    Returns None when offline / unconfigured / failed so callers can use local data.
+    The model chooses dataset vs weather (or neither). Returns None when
+    offline / unconfigured / failed so callers can use local data.
     """
     _ = advisor, grounded  # API compatibility
 
@@ -296,9 +299,11 @@ def run_vision_agent(
         user_prompt += "RECENT_CHAT:\n" + "\n".join(history_lines) + "\n\n"
     user_prompt += (
         f"FARMER_QUESTION:\n{message}\n\n"
-        "Decide whether you need tools. If you do, call them. "
+        "Decide for yourself which tools (if any) to call. "
+        "Use get_pasture_data for the local dataset and get_weather for live Open-Meteo — "
+        "only when each is needed; do not call both by habit. "
         f"Default location for tools is {location}. "
-        "Then answer as Oryx with clear reasoning grounded in tool results when used."
+        "Then answer as Vision with clear reasoning grounded in tool results when used."
     )
 
     try:
@@ -316,7 +321,7 @@ def run_vision_agent(
         client = genai.Client(api_key=api_key)
         declarations = _build_declarations(types)
         config = types.GenerateContentConfig(
-            system_instruction=ORYX_SYSTEM_PROMPT,
+            system_instruction=VISION_SYSTEM_PROMPT,
             temperature=0.35,
             tools=[types.Tool(function_declarations=declarations)],
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
@@ -411,7 +416,7 @@ def run_vision_agent(
                         model=model_name,
                         contents=contents,
                         config=types.GenerateContentConfig(
-                            system_instruction=ORYX_SYSTEM_PROMPT,
+                            system_instruction=VISION_SYSTEM_PROMPT,
                             temperature=0.35,
                         ),
                     )

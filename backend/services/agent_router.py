@@ -4,7 +4,7 @@ Lightweight intent router for Farmar chat (pre-Gemini).
 Chooses which dataset tools to run based on the farmer's question so both
 Lacuna and synthetic fields are used for the right hackathon questions.
 
-Also classifies greetings / small talk / off-topic so In Vision does not
+Also classifies greetings / small talk / off-topic so Vision does not
 dump a scripted "Prepare to Move" card when someone just says hey.
 """
 
@@ -178,7 +178,7 @@ def conversational_reply(
 
     if mode == "greeting":
         return (
-            f"{hello}. I'm In Vision — here when you need a clear read on your "
+            f"{hello}. I'm Vision — here when you need a clear read on your "
             f"camps, herd, or rainfall{place}.\n\n"
             "Ask me anything about grazing, stocking, moving the herd, or how "
             "the veld is holding up. No rush."

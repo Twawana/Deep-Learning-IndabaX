@@ -1,5 +1,5 @@
 """
-In Vision agent package — Planner → Executor → Advisor pipeline.
+Vision agent package — Planner → Executor → Advisor pipeline.
 
 Tools return facts only. Recommendations come only from the Advisor stage.
 """

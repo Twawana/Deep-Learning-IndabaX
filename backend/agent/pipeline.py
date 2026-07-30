@@ -1,5 +1,5 @@
 """
-In Vision reasoning pipeline.
+Vision reasoning pipeline.
 
 User → Intent → Context → Tool Plan → Execute → Evidence → Decide → Advise
 
@@ -19,7 +19,7 @@ from agent.response_generator import generate_response
 from agent.tool_executor import execute_tools
 from agent.tool_planner import plan_tools
 
-logger = logging.getLogger("in_vision.pipeline")
+logger = logging.getLogger("vision.pipeline")
 
 
 def run_pipeline(

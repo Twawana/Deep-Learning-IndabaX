@@ -1,7 +1,7 @@
 """
 Build farmer-facing chat / dashboard payloads from existing tool outputs.
 
-Oryx (Gemini) may supply farmer-facing prose; otherwise deterministic summaries
+Vision (Gemini) may supply farmer-facing prose; otherwise deterministic summaries
 from measured data + grazing assessment. Respects FREE vs PREMIUM response depth.
 """
 
@@ -18,6 +18,27 @@ GUEST_LOGIN_CTA = (
     "Log in on Profile for unlimited free answers, or upgrade to Premium for "
     "detailed grazing insights."
 )
+
+_MARKETING_LINES = (
+    FREE_UPGRADE_CTA,
+    GUEST_LOGIN_CTA,
+    "Upgrade to Premium to get detailed grazing insights, rainfall analysis, and stocking recommendations.",
+    "Log in on Profile for unlimited free answers, or upgrade to Premium for detailed grazing insights.",
+    "One Premium upgrade nudge",
+)
+
+
+def strip_marketing_copy(text: str) -> str:
+    """Remove login/Premium marketing lines from farmer-facing answers."""
+    if not text:
+        return text
+    cleaned = text
+    for phrase in _MARKETING_LINES:
+        cleaned = cleaned.replace(phrase, "")
+    # Drop leftover empty lines
+    lines = [ln.rstrip() for ln in cleaned.splitlines()]
+    lines = [ln for ln in lines if ln.strip()]
+    return "\n".join(lines).strip()
 
 B2B_KEYWORDS = (
     "ngo",
@@ -68,6 +89,114 @@ def _risk_phrase(risk: Optional[str]) -> str:
         "unknown": "uncertain",
     }
     return mapping.get((risk or "unknown").lower(), "uncertain")
+
+
+def _tool_names(tools: Any) -> list[str]:
+    names: list[str] = []
+    for item in tools or []:
+        if isinstance(item, dict) and item.get("name"):
+            names.append(str(item["name"]))
+        elif isinstance(item, str):
+            names.append(item)
+    return names
+
+
+def build_data_source(
+    *,
+    mode: str,
+    vision_model: Optional[str] = None,
+    vision_text: Optional[str] = None,
+    vision_tools: Optional[list[Any]] = None,
+    pasture_data: Optional[dict[str, Any]] = None,
+    weather_data: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """
+    Farmer-facing provenance: local dataset vs online AI / live weather.
+
+    kind: local | online | mixed
+    """
+    pasture_data = pasture_data or {}
+    weather_data = weather_data or {}
+    names = _tool_names(vision_tools)
+    used: list[str] = []
+
+    used_ai = bool(vision_model or vision_text)
+    used_pasture = (
+        "get_pasture_data" in names
+        or "local_dataset" in names
+        or bool(pasture_data.get("found"))
+        or any(
+            n in names
+            for n in (
+                "calculate_grazing_pressure",
+                "estimate_safe_stocking",
+                "compare_to_prior_year",
+                "compare_tenure_nearby",
+                "run_what_if_scenario",
+                "compare_locations",
+            )
+        )
+    )
+    weather_skipped = bool(weather_data.get("skipped"))
+    used_weather = (
+        "get_weather" in names
+        or (
+            bool(weather_data.get("found"))
+            and not weather_skipped
+            and mode == "online"
+        )
+    )
+
+    if used_ai:
+        used.append("vision_ai")
+    if used_pasture:
+        used.append("local_dataset")
+    if used_weather:
+        used.append("live_weather")
+
+    if mode == "offline" or (not used_ai and not used_weather):
+        kind = "local"
+        label = "Local data"
+        if used_pasture:
+            detail = "Using the local rangeland dataset (no live weather / online AI)."
+        else:
+            detail = "Answered without live network data."
+    elif used_ai and used_pasture and not used_weather:
+        kind = "mixed"
+        label = "Online AI + local data"
+        detail = "Vision AI online, pasture numbers from the local dataset."
+    elif used_ai and used_weather and used_pasture:
+        kind = "mixed"
+        label = "Online + local data"
+        detail = "Vision AI + local pasture dataset + live Open-Meteo weather."
+    elif used_ai and used_weather:
+        kind = "online"
+        label = "Online data"
+        detail = "Vision AI + live Open-Meteo weather."
+    elif used_weather and used_pasture:
+        kind = "mixed"
+        label = "Online weather + local data"
+        detail = "Local pasture dataset + live Open-Meteo weather."
+    elif used_weather:
+        kind = "online"
+        label = "Online data"
+        detail = "Live Open-Meteo weather."
+    elif used_ai:
+        kind = "online"
+        label = "Online data"
+        detail = "Vision AI (online) — no dataset or weather tools called."
+    else:
+        kind = "online"
+        label = "Online data"
+        detail = "Online session."
+
+    return {
+        "kind": kind,
+        "mode": mode,
+        "label": label,
+        "detail": detail,
+        "used": used,
+    }
 
 
 def _rainfall_context_words(recent_mm: Any, recent_days: Any) -> str:
@@ -269,8 +398,12 @@ def build_chat_response(
     farm_size_ha: Optional[float] = None,
     vision_override: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
-    """Shape POST /chat response expected by the Farmar frontend (Oryx / tool-backed)."""
-    from services.decision_service import advisor_prose_from_decision, build_decision
+    """Shape POST /chat response expected by the Farmar frontend (Vision / tool-backed)."""
+    from services.decision_service import (
+        advisor_prose_from_decision,
+        build_decision,
+        question_aware_local_reply,
+    )
 
     # Guests never get premium depth, even if a bad client sends premium.
     tier = "free" if is_guest else _normalize_tier(user_tier)
@@ -315,7 +448,7 @@ def build_chat_response(
     data_mode = (vision_override or {}).get("mode") or advisor.get("mode") or "online"
     agent_label = (
         (vision_override or {}).get("agent")
-        or ("Oryx" if vision_text else ("local-offline" if data_mode == "offline" else "tools"))
+        or ("Vision" if vision_text else ("local-offline" if data_mode == "offline" else "tools"))
     )
 
     if vision_text:
@@ -336,8 +469,16 @@ def build_chat_response(
         )
         recommendations = [r for r in recommendations if r]
     else:
-        prose = advisor_prose_from_decision(
-            decision=decision, location=location, message=message
+        prose = question_aware_local_reply(
+            message=message,
+            location=location,
+            decision=decision or {},
+            pasture_data=pasture_data,
+            weather_data=weather_data,
+            grazing=grazing,
+            stocking=stocking,
+            year_over_year=yoy,
+            herd_size=herd_size,
         )
         if intent_paragraphs:
             prose = prose + "\n\n" + "\n\n".join(intent_paragraphs)
@@ -350,6 +491,23 @@ def build_chat_response(
             )
         )
         recommendations = [r for r in recommendations if r]
+        # Prefer chat prose over the stock decision card for varied questions
+        msg_l = (message or "").lower()
+        if any(
+            k in msg_l
+            for k in (
+                "how long",
+                "rainfall",
+                "rain",
+                "stock",
+                "overgraz",
+                "bush",
+                "carrying",
+            )
+        ):
+            decision = None
+            recommendations = []
+            explainer = {}
 
     if b2b and not vision_text:
         prose = (
@@ -359,25 +517,36 @@ def build_chat_response(
         )
 
     if tier == "free":
-        cta = GUEST_LOGIN_CTA if is_guest else FREE_UPGRADE_CTA
+        # Short free answers shaped to the question — never the identical Monitor Closely card.
         if vision_text:
-            short = vision_text
-            if FREE_UPGRADE_CTA not in short and GUEST_LOGIN_CTA not in short:
-                short = f"{short.rstrip()}\n\n{cta}"
+            short = strip_marketing_copy(vision_text)
         elif scenario.get("found") and scenario.get("farmer_summary"):
-            short = f"{scenario['farmer_summary']}\n\n{cta}"
+            short = strip_marketing_copy(scenario["farmer_summary"])
         else:
-            extra = ("\n\n" + intent_paragraphs[0]) if intent_paragraphs else ""
-            short = (
-                f"{decision.get('headline')}: {decision.get('recommended_action')}\n\n"
-                f"{(decision.get('grazing_conditions') or {}).get('combined_assessment', '')}"
-                f"{extra}\n\n"
-                f"{cta}"
+            short = question_aware_local_reply(
+                message=message,
+                location=location,
+                decision=decision or {},
+                pasture_data=pasture_data,
+                weather_data=weather_data,
+                grazing=grazing,
+                stocking=stocking,
+                year_over_year=yoy,
+                herd_size=herd_size,
             )
+            # Keep any bush/YoY intent facts that answer the question directly
+            if intent_paragraphs and any(
+                k in (message or "").lower() for k in ("bush", "encroach", "last year", "worse")
+            ):
+                # Prefer question_aware; only append unique YoY lines not already present
+                for para in intent_paragraphs:
+                    if para and para not in short:
+                        short = f"{short}\n\n{para}"
+        short = strip_marketing_copy(short)
         tools_used = []
         if vision_model:
             tools_used.append(
-                {"name": "Oryx", "summary": f"Gemini agentic ({vision_model})"}
+                {"name": "Vision", "summary": f"Gemini agentic ({vision_model})"}
             )
         for t in vision_tools:
             if isinstance(t, dict) and t.get("name"):
@@ -408,55 +577,62 @@ def build_chat_response(
             tools_used.append(
                 {"name": "estimate_safe_stocking", "summary": stocking.get("status")}
             )
+        # Free tier: chat prose only — do not attach the same Monitor Closely card every time.
+        limitations: list[str] = []
+        if data_mode == "offline":
+            limitations.append(
+                "Offline: local dataset only — live AI weather may be unavailable."
+            )
+        if not vision_model and data_mode == "online":
+            limitations.append(
+                "Vision AI temporarily unavailable — answer uses local pasture data and weather tools."
+            )
+        reasoning = vision_reasoning or (
+            "Offline local-dataset guidance."
+            if data_mode == "offline"
+            else "Question-aware local guidance from pasture, weather, and grazing tools."
+        )
+        data_source = build_data_source(
+            mode=data_mode,
+            vision_model=vision_model,
+            vision_text=vision_text,
+            vision_tools=vision_tools,
+            pasture_data=pasture_data,
+            weather_data=weather_data,
+        )
         sources = {
             "scenario": scenario or None,
             "intents": intents,
             "agent": agent_label,
             "mode": data_mode,
-        } if scenario.get("found") or vision_text or data_mode == "offline" else None
-        decision_out = None
-        if decision and not vision_text:
-            decision_out = {
-                "action_priority": decision.get("action_priority"),
-                "headline": decision.get("headline"),
-                "recommended_action": decision.get("recommended_action"),
-                "explainer": {
-                    "what": explainer.get("what"),
-                    "why": (explainer.get("why") or [])[:2],
-                    "checks": explainer.get("checks"),
-                },
-                "confidence": decision.get("confidence"),
-                "what_changed": scenario.get("what_changed") if scenario else None,
-            }
-        limitations = [
-            "Free plan: short guidance only.",
-            "Detailed metrics, timeline, and full evidence are available on Premium.",
-        ]
-        if data_mode == "offline":
-            limitations.insert(
-                0,
-                "Offline: local dataset only — Oryx AI and live weather unavailable.",
-            )
-        reasoning = vision_reasoning or (
-            "Offline local-dataset guidance."
-            if data_mode == "offline"
-            else "Short free-tier guidance from pasture, weather, and intent-routed dataset tools."
-        )
+            "data_source": data_source,
+        } if scenario.get("found") or vision_text or data_mode == "offline" else {
+            "mode": data_mode,
+            "data_source": data_source,
+            "agent": agent_label,
+        }
         return {
             "response": short,
             "reasoning": reasoning,
             "recommendations": [],
             "tools_used": tools_used,
             "sources": sources,
-            "decision": decision_out,
+            "decision": None,
             "limitations": "; ".join(limitations),
             "confidence": advisor.get("confidence") or "low",
             "user_tier": tier,
             "agent": agent_label,
             "mode": data_mode,
+            "data_source": data_source,
+            "assistant": {
+                "name": agent_label if agent_label != "tools" else "Vision",
+                "powered_by": "gemini" if vision_model else "local",
+                "mode": "agentic_tool_calling" if vision_model else "local_tools",
+                "data_source": data_source,
+            },
         }
 
-    # Premium: natural prose + full decision + evidence
+    # Premium: natural prose + optional decision card (not for bush/status Qs)
     if not vision_text:
         if herd_size is None:
             prose += (
@@ -471,7 +647,7 @@ def build_chat_response(
     tools_used = []
     if vision_model:
         tools_used.append(
-            {"name": "Oryx", "summary": f"Gemini agentic ({vision_model})"}
+            {"name": "Vision", "summary": f"Gemini agentic ({vision_model})"}
         )
     for t in vision_tools:
         if isinstance(t, dict) and t.get("name"):
@@ -568,10 +744,21 @@ def build_chat_response(
             f"B2B context={'yes' if b2b else 'no'}"
         )
     else:
-        reasoning = vision_reasoning or f"Oryx reply for: {message}"
+        reasoning = vision_reasoning or f"Vision reply for: {message}"
+
+    data_source = build_data_source(
+        mode=data_mode,
+        vision_model=vision_model,
+        vision_text=vision_text,
+        vision_tools=vision_tools,
+        pasture_data=pasture_data,
+        weather_data=weather_data,
+    )
+    if isinstance(sources, dict):
+        sources = {**sources, "data_source": data_source}
 
     return {
-        "response": prose,
+        "response": strip_marketing_copy(prose),
         "reasoning": reasoning,
         "recommendations": recommendations[:5] if recommendations else [],
         "tools_used": tools_used,
@@ -582,4 +769,11 @@ def build_chat_response(
         "user_tier": tier,
         "agent": agent_label,
         "mode": data_mode,
+        "data_source": data_source,
+        "assistant": {
+            "name": agent_label if agent_label not in {"tools", "local-offline"} else "Vision",
+            "powered_by": "gemini" if vision_model else "local",
+            "mode": "agentic_tool_calling" if vision_model else "local_tools",
+            "data_source": data_source,
+        },
     }

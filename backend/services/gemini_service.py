@@ -1,5 +1,5 @@
 """
-Oryx — Gemini agent for Namibian livestock decision support.
+Vision — Gemini agent for Namibian livestock decision support.
 
 Not a scripted chatbot: the model chooses when to call pasture/dataset tools
 vs live weather (Open-Meteo) via Gemini function calling.
@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 from tools.registry import GEMINI_TOOLS
 
-ASSISTANT_NAME_DEFAULT = "Oryx"
+ASSISTANT_NAME_DEFAULT = "Vision"
 DEFAULT_MODEL = "gemini-2.0-flash"
 MAX_TOOL_ROUNDS = 5
 
@@ -44,13 +44,14 @@ def _system_instruction(*, tier: str) -> str:
         "For farm decisions on Premium: a few short paragraphs, warm but concrete, "
         "ending with one clear next step."
         if tier == "premium"
-        else "For farm decisions on Free: keep it short (a few sentences), still warm and clear."
+        else "For farm decisions on Free: keep it short (a few sentences), still warm and clear. Do not add login or Premium upgrade marketing lines."
     )
     return f"""You are {name}, a trusted Namibian livestock advisor inside Farmar (extension-officer voice).
 
 First determine what the farmer is asking. Only call tools needed for that question.
+Do NOT follow a fixed script. Call get_pasture_data only for dataset pasture evidence.
+Call get_weather only for live rainfall/forecast. Call both only when both are needed.
 Educational / seasonal / definition questions: explain naturally — do NOT recommend moving.
-Decision questions: call pasture/weather/stocking tools as needed, then explain evidence.
 Never fabricate NDVI, rainfall mm, cover %, or herd size. Ask if missing.
 Never force "Prepare to Move" into unrelated answers. Do not upsell Premium. No emoji.
 {depth}
@@ -212,7 +213,7 @@ def run_agent(
     history: Optional[list[dict[str, str]]] = None,
 ) -> dict[str, Any]:
     """
-    Agentic loop: Oryx decides which tools to call, then answers.
+    Agentic loop: Vision decides which tools to call, then answers.
 
     Returns:
       ok, text, model, assistant, tools_used, tool_results, rounds, error?
@@ -290,7 +291,7 @@ def run_agent(
                         "FARM CONTEXT:\n"
                         + "\n".join(f"- {b}" for b in profile_bits)
                         + f"\n\nFARMER MESSAGE:\n{message}\n\n"
-                        "Respond as Oryx. Greetings and small talk: warm reply, no tools. "
+                        "Respond as Vision. Greetings and small talk: warm reply, no tools. "
                         "Off-topic: gentle redirect to livestock/grazing. "
                         "Farm questions: call only the tools you need, then answer with clear "
                         "reasoning in a natural, comforting voice — not a scripted report."
@@ -395,7 +396,7 @@ def run_agent(
             final_text = (getattr(wrap, "text", None) or "").strip()
 
         if not final_text:
-            raise GeminiError("Oryx returned no text after tool use.")
+            raise GeminiError("Vision returned no text after tool use.")
 
         return {
             "ok": True,

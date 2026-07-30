@@ -1,4 +1,4 @@
-"""Network / mode helpers shared by weather tools and the Oryx agent."""
+"""Network / mode helpers shared by weather tools and the Vision agent."""
 
 from __future__ import annotations
 

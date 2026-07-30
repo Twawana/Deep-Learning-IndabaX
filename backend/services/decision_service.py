@@ -727,6 +727,35 @@ def advisor_prose_from_decision(
     message: str = "",
 ) -> str:
     """Natural extension-officer style paragraph from a decision block."""
+    # Prefer question-shaped answers when the farmer asked something specific.
+    aware = question_aware_local_reply(
+        message=message,
+        location=location,
+        decision=decision,
+        pasture_data={"found": bool((decision.get("pasture_health") or {}).get("summary")), "pasture": {}},
+        weather_data={"found": True},
+        grazing={"grazing_risk": decision.get("grazing_risk")},
+        stocking=None,
+        herd_size=decision.get("herd_size"),
+    )
+    # If we have a strong rainfall/dwell/stocking answer, use it.
+    msg = (message or "").lower()
+    if any(
+        k in msg
+        for k in (
+            "how long",
+            "rainfall",
+            "rain",
+            "stock",
+            "overgraz",
+            "move",
+            "when",
+            "bush",
+            "carrying",
+        )
+    ):
+        return aware
+
     pasture = (decision.get("pasture_health") or {}).get("summary") or ""
     rain_block = decision.get("rainfall_impact") or {}
     rain = rain_block.get("outlook") or ""
@@ -753,7 +782,6 @@ def advisor_prose_from_decision(
         combined,
         closer,
     ]
-    # Deduplicate empty / near-duplicate sentences
     seen: set[str] = set()
     lines: list[str] = []
     for part in parts:
@@ -767,7 +795,333 @@ def advisor_prose_from_decision(
         lines.append(text)
     if message and "compare" in message.lower():
         lines.insert(0, "Here is a grazing-focused reading of your question.")
-    return "\n\n".join(lines)
+    return "\n\n".join(lines) if lines else aware
+
+
+def question_aware_local_reply(
+    *,
+    message: str,
+    location: str,
+    decision: Optional[dict[str, Any]] = None,
+    pasture_data: Optional[dict[str, Any]] = None,
+    weather_data: Optional[dict[str, Any]] = None,
+    grazing: Optional[dict[str, Any]] = None,
+    stocking: Optional[dict[str, Any]] = None,
+    year_over_year: Optional[dict[str, Any]] = None,
+    herd_size: Optional[int] = None,
+) -> str:
+    """
+    Local (non-Gemini) answer shaped to the farmer's question.
+
+    Used when Gemini is unavailable/quota-limited so every ask does not collapse
+    into the same "Monitor Closely" template.
+    """
+    decision = decision or {}
+    pasture_data = pasture_data or {}
+    weather_data = weather_data or {}
+    grazing = grazing or {}
+    stocking = stocking or {}
+    year_over_year = year_over_year or {}
+    text = (message or "").lower()
+
+    # Pure off-topic / non-farm
+    farm_markers = (
+        "bush",
+        "encroach",
+        "pasture",
+        "graz",
+        "herd",
+        "rain",
+        "stock",
+        "camp",
+        "farm",
+        "cattle",
+        "move",
+        "veld",
+        "cover",
+        "biomass",
+        "ndvi",
+        "tenure",
+    )
+    if not any(k in text for k in farm_markers) and any(
+        k in text for k in ("gay", "joke", "meme", "who are you", "hate", "stupid")
+    ):
+        return (
+            "I'm Vision — I only help with Namibian rangeland and herd decisions "
+            "(pasture, rainfall, stocking, bush, when to move). Ask me about your camps."
+        )
+
+    pasture_ui = _pasture_ui_lite(pasture_data) if pasture_data else {}
+    weather_ui = _weather_ui_lite(weather_data) if weather_data else {}
+    cover = _f(pasture_ui.get("vegetation_cover"))
+    biomass = _f(pasture_ui.get("biomass"))
+    bush = _f(pasture_ui.get("bush_encroachment"))
+    # Pull metrics from decision technical block when pasture_data was empty
+    if cover is None and decision.get("pasture_health"):
+        tech = (decision.get("pasture_health") or {}).get("technical")
+        if isinstance(tech, dict):
+            cover = _f(tech.get("vegetation_cover"))
+            biomass = _f(tech.get("biomass")) if biomass is None else biomass
+            bush = _f(tech.get("bush_encroachment")) if bush is None else bush
+        elif isinstance(tech, list):
+            for row in tech:
+                if not isinstance(row, dict):
+                    continue
+                key = str(row.get("id") or row.get("key") or row.get("label") or "").lower()
+                val = row.get("value")
+                if cover is None and "cover" in key:
+                    cover = _f(val)
+                if biomass is None and "biomass" in key:
+                    biomass = _f(val)
+                if bush is None and "bush" in key:
+                    bush = _f(val)
+    rain_block = decision.get("rainfall_impact") or {}
+    recent_mm = _f(
+        weather_ui.get("recent_rainfall_mm")
+        if weather_ui
+        else rain_block.get("recent_rainfall_mm")
+    )
+    forecast_mm = _f(
+        weather_ui.get("forecast_total_mm")
+        if weather_ui
+        else rain_block.get("forecast_total_mm")
+    )
+    recent_days = (weather_data.get("recent_rainfall") or {}).get("days") or 7
+    priority = (decision.get("action_priority") or "monitor").lower()
+    risk = (grazing.get("grazing_risk") or decision.get("grazing_risk") or "unknown").lower()
+
+    def _fmt_mm(v: Optional[float]) -> str:
+        if v is None:
+            return "not confirmed in the weather feed"
+        return f"about {v:.1f} mm"
+
+    def _dwell_window() -> str:
+        if priority == "stay":
+            return "roughly 2–3 weeks of continued grazing looks plausible if you keep checking the camp"
+        if priority == "monitor":
+            return "likely only several more days to about 1–2 weeks before you should plan a move"
+        if priority == "move_soon":
+            return "plan to move within about one week"
+        return "move as soon as practical — preferably within a few days"
+
+    rain_line = (
+        f"Recent rainfall near {location}: {_fmt_mm(recent_mm)} over the last {recent_days} days"
+        + (
+            f"; forecast total around {_fmt_mm(forecast_mm)}."
+            if forecast_mm is not None
+            else "."
+        )
+    )
+    pasture_bits = []
+    if cover is not None:
+        pasture_bits.append(f"vegetation cover ~{cover:.0f}%")
+    if biomass is not None:
+        pasture_bits.append(f"biomass ~{biomass:.0f}")
+    if bush is not None:
+        pasture_bits.append(f"bush ~{bush:.0f}%")
+    pasture_line = (
+        f"Pasture readings: {', '.join(pasture_bits)}."
+        if pasture_bits
+        else (
+            f"I have pasture survey context for {location}."
+            if pasture_data.get("found") or decision.get("pasture_health")
+            else f"I could not lock strong pasture measurements for {location}."
+        )
+    )
+    pressure_line = (
+        f"Grazing pressure risk is currently marked {risk}"
+        + (f" with a herd of about {herd_size}." if herd_size is not None else ".")
+    )
+
+    # --- Rainfall + how long can herd stay ---
+    if any(
+        k in text
+        for k in (
+            "how long",
+            "how many days",
+            "how many weeks",
+            "before i need to move",
+            "before i move",
+            "stay on this",
+            "dwell",
+        )
+    ) or (
+        "rain" in text
+        and any(k in text for k in ("move", "stay", "herd", "pasture", "camp"))
+    ):
+        dry = _rain_dry(recent_mm, forecast_mm)
+        rain_note = (
+            "That is little useful rain for recovery, so forage will not bounce back quickly."
+            if dry
+            else "There has been some useful moisture, which helps a bit, but pressure still matters."
+        )
+        return "\n\n".join(
+            [
+                f"For {location}, here is a direct read on how long the herd can stay.",
+                rain_line + " " + rain_note,
+                pasture_line,
+                pressure_line,
+                f"Stay window: {_dwell_window()}. Re-check the camp after any new rain, and sooner if cover keeps falling.",
+                "This is an estimate from local pasture records and weather data — walk the camp before you decide.",
+            ]
+        )
+
+    # --- Overgrazed? ---
+    if "overgraz" in text or "over graz" in text:
+        stressed = _cover_stressed(cover, biomass) or risk in {"high", "medium"}
+        verdict = (
+            "Yes — current readings suggest this camp is under too much pressure / stressed."
+            if stressed
+            else "Not clearly overgrazed from the numbers on file, but keep watching."
+        )
+        return "\n\n".join(
+            [
+                f"Overgrazing check for {location}:",
+                verdict,
+                pasture_line,
+                pressure_line,
+                rain_line,
+                "If animals stay on a stressed camp through a dry spell, recovery gets slower.",
+            ]
+        )
+
+    # --- Stocking / carrying ---
+    if any(k in text for k in ("stocking", "carrying capacity", "how many animal", "safe herd", "ha/lsu", "lsu")):
+        stock_bits = []
+        if stocking.get("found"):
+            if stocking.get("status"):
+                stock_bits.append(str(stocking["status"]))
+            if stocking.get("message"):
+                stock_bits.append(str(stocking["message"]))
+            if stocking.get("safe_herd_size") is not None:
+                stock_bits.append(f"Safe herd estimate ~{stocking['safe_herd_size']}.")
+            if stocking.get("recommended_ha_per_lsu") is not None:
+                stock_bits.append(
+                    f"Rough carrying guidance ~{stocking['recommended_ha_per_lsu']} ha/LSU."
+                )
+        cap = pasture_ui.get("carrying_capacity")
+        if cap is not None and not stock_bits:
+            stock_bits.append(f"Carrying capacity on file is about {cap:.1f} ha/LSU.")
+        body = " ".join(stock_bits) if stock_bits else (
+            "I need herd size and camp hectares in Profile to turn carrying capacity into a head-count."
+        )
+        return "\n\n".join(
+            [
+                f"Stocking / carrying capacity for {location}:",
+                body,
+                pasture_line,
+                rain_line,
+            ]
+        )
+
+    # --- Move when? ---
+    if any(k in text for k in ("should i move", "when to move", "prepare to move", "move my herd", "move the herd")):
+        return "\n\n".join(
+            [
+                f"Move timing for {location}:",
+                f"Suggested action band: {(decision.get('headline') or priority)}.",
+                f"Practical timing: {_dwell_window()}.",
+                pasture_line,
+                rain_line,
+                pressure_line,
+            ]
+        )
+
+    # --- Rainfall only ---
+    if any(k in text for k in ("rainfall", "rain", "forecast", "drought", "dry spell")):
+        return "\n\n".join(
+            [
+                f"Rainfall context for {location}:",
+                rain_line,
+                (
+                    "Dry conditions mean pasture recovery will stay slow if grazing continues at the same intensity."
+                    if _rain_dry(recent_mm, forecast_mm)
+                    else "Moisture looks more helpful than a dry spell — still watch how the grass responds."
+                ),
+                pasture_line,
+            ]
+        )
+
+    # --- Bush encroachment (answer the question directly) ---
+    if any(k in text for k in ("bush", "encroach", "woody")):
+        yoy = year_over_year if year_over_year.get("found") else {}
+        deltas = (yoy.get("deltas") or {}) if yoy else {}
+        bush_delta = _f(deltas.get("bush_encroachment"))
+        current_bush = bush
+        if current_bush is None and yoy.get("current"):
+            current_bush = _f((yoy.get("current") or {}).get("bush_encroachment"))
+
+        if bush_delta is not None and bush_delta >= 5:
+            trend = (
+                f"Yes — bush/woody signal looks worse than last year "
+                f"(about +{bush_delta:.0f} points)."
+            )
+        elif bush_delta is not None and bush_delta <= -5:
+            trend = (
+                f"No — bush/woody signal is not getting worse; it looks better than last year "
+                f"(about {bush_delta:.0f} points)."
+            )
+        elif bush_delta is not None:
+            trend = (
+                "Bush/woody signal is roughly stable versus last year — not a clear worsening trend."
+            )
+        elif current_bush is not None and current_bush >= 25:
+            trend = (
+                f"I do not have a firm year-to-year bush trend, but current bush/woody cover "
+                f"is elevated (~{current_bush:.0f}%). Treat encroachment as an active issue."
+            )
+        elif current_bush is not None:
+            trend = (
+                f"I do not have a firm year-to-year bush trend. Current bush/woody cover is "
+                f"about {current_bush:.0f}% — watch it, but it is not extreme from this reading alone."
+            )
+        else:
+            trend = (
+                "I could not confirm a clear bush trend for this farm from the on-file survey rows. "
+                "Walk the camps and compare woody thickening on rested vs heavily used areas."
+            )
+
+        actions = [
+            "What to do:",
+            "1) Rest the worst bushy camps this season if you can rotate.",
+            "2) Keep grazing pressure off recovering grass — do not park the whole herd on thinning veld.",
+            "3) Where bush is already dense, plan mechanical thinning / targeted browsing (goats) only with local extension advice for your tenure rules.",
+            "4) Re-check the same camps after the next rainy season — rising bush % year-on-year means act sooner.",
+        ]
+        return "\n\n".join(
+            [
+                f"Bush encroachment on/near {location}:",
+                trend,
+                pasture_line,
+                "\n".join(actions),
+            ]
+        )
+
+    # --- Pasture / cover (non-bush) ---
+    if any(k in text for k in ("pasture", "ndvi", "cover", "veld", "camp condition")):
+        return "\n\n".join(
+            [
+                f"Pasture condition around {location}:",
+                pasture_line,
+                (decision.get("pasture_health") or {}).get("summary")
+                or "Use the cover/biomass readings above as your baseline.",
+                rain_line,
+                pressure_line,
+            ]
+        )
+
+    # Default — still include numbers so answers are not identical shells
+    action = decision.get("recommended_action") or _dwell_window()
+    return "\n\n".join(
+        [
+            f"About {location}:",
+            pasture_line,
+            rain_line,
+            pressure_line,
+            action,
+            "Ask a more specific question (rainfall stay-time, stocking, overgrazing, or which camp to rest) for a sharper answer.",
+        ]
+    )
 
 
 def scenario_decision(
