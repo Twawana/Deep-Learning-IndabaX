@@ -81,6 +81,7 @@ def sites() -> dict:
     return {
         "sites": dataset_service.list_sites(),
         "aliases": dataset_service.list_supported_place_aliases(),
+        "dataset": dataset_service.dataset_source_meta(),
     }
 
 
@@ -92,3 +93,26 @@ def tools_manifest() -> dict:
     Callables are not exposed over HTTP — only names, descriptions, and parameter schemas.
     """
     return {"tools": list_tool_manifests()}
+
+
+@app.get("/health/data", tags=["health"], summary="Dataset / auth source status")
+def health_data() -> dict:
+    """Show whether the API is reading Supabase or local CSV/JSON."""
+    from services import gemini_service, user_store
+    from services.supabase_client import is_configured
+
+    meta = {}
+    try:
+        meta = dataset_service.dataset_source_meta()
+    except Exception as exc:  # noqa: BLE001
+        meta = {"error": str(exc)}
+    return {
+        "supabase_configured": is_configured(),
+        "dataset": meta,
+        "auth_source": "supabase" if user_store.use_supabase_users() else "local_json",
+        "gemini": {
+            "configured": gemini_service.is_configured(),
+            "assistant": gemini_service.assistant_name(),
+            "model": gemini_service.model_name(),
+        },
+    }

@@ -5,11 +5,23 @@ Hackathon project: AI tools for Namibian livestock farmers (pasture + weather + 
 ## Repo layout
 
 ```
-backend/     FastAPI API, tools, processed advisory CSV
-frontend/    Farmar React (Vite) mobile-first UI
+backend/     FastAPI API, tools, Supabase (or local CSV) data
+frontend/    Farmar React (Vite) mobile + desktop UI
 ```
 
-## Important: dataset is NOT in git
+## Data source (Supabase)
+
+With `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` in `backend/.env`, the API reads:
+
+| Table | Contents |
+|-------|----------|
+| `range_sites` | Lacuna field advisory rows |
+| `range_landsites` | Synthetic survey (mapped at runtime) |
+| `users` | Farmar accounts |
+
+Set `DATA_SOURCE=csv` to force the local `advisory_dataset.csv` fallback.
+
+## Important: raw dataset is NOT in git
 
 The Kaggle Lacuna raw dataset (Excel forms + ~900 field photos) is **large** and is **gitignored**.
 

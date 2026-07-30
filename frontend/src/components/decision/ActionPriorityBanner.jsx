@@ -1,4 +1,5 @@
 import { priorityStyle } from "./priorityStyles";
+import StatusDot from "./StatusDot";
 
 export default function ActionPriorityBanner({ decision }) {
   if (!decision) return null;
@@ -10,8 +11,9 @@ export default function ActionPriorityBanner({ decision }) {
       <p className="text-[11px] font-semibold uppercase tracking-wide opacity-80">
         Current Grazing Recommendation
       </p>
-      <h2 className="mt-1 font-display text-xl font-semibold">
-        {style.emoji} {decision.headline || decision.overall_status_label}
+      <h2 className="mt-1 flex items-center gap-2 font-display text-xl font-semibold">
+        <StatusDot style={style} className="h-2.5 w-2.5" />
+        {decision.headline || decision.overall_status_label}
       </h2>
       <p className="mt-2 text-sm leading-relaxed">
         {decision.recommended_action}

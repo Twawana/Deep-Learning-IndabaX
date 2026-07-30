@@ -158,11 +158,17 @@ export function AuthProvider({ children }) {
       return { ok: true, message: data?.message || "Updated." };
     } catch (error) {
       const detail = error?.response?.data?.detail;
-      const message =
-        (typeof detail === "string" && detail) ||
-        (Array.isArray(detail) && detail.map((d) => d?.msg || d).join(" ")) ||
-        error?.message ||
-        "Request failed.";
+      let message = error?.message || "Request failed.";
+      if (typeof detail === "string") {
+        message = detail;
+      } else if (Array.isArray(detail)) {
+        message = detail
+          .map((item) => item?.msg || item?.message || String(item))
+          .filter(Boolean)
+          .join(" ");
+      } else if (detail && typeof detail === "object") {
+        message = detail.message || JSON.stringify(detail);
+      }
       return { ok: false, message };
     }
   };

@@ -230,7 +230,7 @@ export default function Profile() {
                 </p>
                 <p className="mt-1 text-[11px] text-ink-muted">
                   AI asks used: {currentUser.aiUsage || 0}
-                  {source === "backend" ? " · synced" : ""}
+                  {source === "backend" ? " · saved in account database" : " · offline cache"}
                 </p>
               </div>
 
@@ -279,7 +279,7 @@ export default function Profile() {
               {authMode === "login" ? (
                 <form onSubmit={handleLogin} className="space-y-2">
                   <p className="text-sm text-ink-muted">
-                    Log in to unlock full details, unlimited Oryx, and Premium AI.
+                    Log in with your email or username to unlock full details, unlimited In Vision, and Premium AI.
                   </p>
                   <div className="rounded-xl border border-dashed border-veld-200 bg-mist/80 px-3 py-2 text-[11px] leading-relaxed text-ink-muted">
                     Demo: <span className="font-semibold text-veld-800">farmer</span> /{" "}
@@ -323,7 +323,7 @@ export default function Profile() {
               ) : (
                 <form onSubmit={handleRegister} className="space-y-2">
                   <p className="text-sm text-ink-muted">
-                    Create a free account to keep your plan and unlock more Oryx usage.
+                    Create a free account — saved to the Farmar database so you can log in later and unlock more In Vision usage.
                   </p>
                   <Field label="Your name" htmlFor="register-name">
                     <input

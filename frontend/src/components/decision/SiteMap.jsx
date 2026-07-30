@@ -298,7 +298,7 @@ export default function SiteMap({ selectedLocation, onSelectSite, decision }) {
         )}
       </div>
 
-      <div className="grazing-map-shell h-64 rounded-xl ring-1 ring-veld-100 lg:h-[28rem]">
+      <div className="grazing-map-shell h-72 rounded-xl ring-1 ring-veld-100 lg:h-[min(70vh,36rem)]">
         <MapContainer
           center={[-22.5, 17.5]}
           zoom={5}

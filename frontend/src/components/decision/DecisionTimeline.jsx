@@ -1,5 +1,6 @@
 import Card from "../Card";
 import { priorityStyle } from "./priorityStyles";
+import StatusDot from "./StatusDot";
 
 const WHEN_LABELS = {
   today: "Today",
@@ -23,14 +24,17 @@ export default function DecisionTimeline({ decision }) {
           const style = priorityStyle(step.status || "monitor");
           return (
             <li key={step.when} className="flex gap-3">
-              <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${style.dot}`} />
+              <StatusDot style={style} className="mt-1.5 h-2.5 w-2.5" />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <p className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
                     {WHEN_LABELS[step.when] || step.when}
                   </p>
-                  <p className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${style.badge}`}>
-                    {style.emoji} {step.label}
+                  <p
+                    className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${style.badge}`}
+                  >
+                    <StatusDot style={style} />
+                    {step.label}
                   </p>
                 </div>
                 <p className="mt-1 text-sm leading-relaxed text-ink">{step.note}</p>

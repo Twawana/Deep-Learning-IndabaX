@@ -1,7 +1,7 @@
 """
-Tool registry for Oryx (Gemini agentic tool-calling).
+Tool registry for In Vision (Gemini agentic tool-calling).
 
-Exposes schemas + Python callables. The LLM decides which tools to invoke;
+Exposes schemas + Python callables. The LLM / planner decides which tools to invoke;
 this module does not call Gemini itself.
 """
 
@@ -53,7 +53,15 @@ GEMINI_TOOLS: list[dict[str, Any]] = [
                 "location": {
                     "type": "string",
                     "description": "Namibian location used to resolve dataset coordinates.",
-                }
+                },
+                "latitude": {
+                    "type": "number",
+                    "description": "Optional farm/town latitude for Open-Meteo.",
+                },
+                "longitude": {
+                    "type": "number",
+                    "description": "Optional farm/town longitude for Open-Meteo.",
+                },
             },
             "required": ["location"],
         },

@@ -176,7 +176,7 @@
   }
 }
 
-/* Laptop / desktop workspace — full app chrome, not a phone mockup */
+/* Laptop / desktop workspace — side nav, no floating phone tab bar */
 @media (min-width: 1024px) {
   .app-shell {
     @apply items-stretch justify-stretch p-0;

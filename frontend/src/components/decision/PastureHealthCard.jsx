@@ -2,6 +2,7 @@ import { useState } from "react";
 import Card from "../Card";
 import { formatValue } from "../../utils/format";
 import { healthStyle } from "./priorityStyles";
+import StatusDot from "./StatusDot";
 
 export default function PastureHealthCard({ decision, pasture }) {
   const [open, setOpen] = useState(false);
@@ -19,8 +20,9 @@ export default function PastureHealthCard({ decision, pasture }) {
   return (
     <Card title="Pasture Health">
       <div className="space-y-3 text-sm">
-        <p className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${style.badge}`}>
-          {style.emoji} {health?.label || "Uncertain"}
+        <p className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${style.badge}`}>
+          <StatusDot style={style} />
+          {health?.label || "Uncertain"}
         </p>
         <p className="leading-relaxed text-ink">{summary}</p>
         {health?.observation_date && (

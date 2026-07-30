@@ -3,6 +3,9 @@ Lightweight intent router for Farmar chat (pre-Gemini).
 
 Chooses which dataset tools to run based on the farmer's question so both
 Lacuna and synthetic fields are used for the right hackathon questions.
+
+Also classifies greetings / small talk / off-topic so In Vision does not
+dump a scripted "Prepare to Move" card when someone just says hey.
 """
 
 from __future__ import annotations
@@ -15,10 +18,12 @@ from services.scenario_parser import is_scenario_question
 # Pure greetings / small talk — do not run pasture tools or decision cards.
 _GREETING_RE = re.compile(
     r"^\s*("
-    r"hi+|h+e+y+|hello+|howdy|hola|hallo|"
+    r"hi+|h+e+y+|hello+|howdy|hola|hallo|howzit|how\s*z\s*it|"
     r"good\s*(morning|afternoon|evening|day)|"
+    r"morning|afternoon|evening|"
+    r"sawubona|dumela|moro|"
     r"how\s*(are|r)\s*(you|u)(\s*(doing|today))?|"
-    r"what'?s\s*up|sup|"
+    r"what'?s\s*up|wassup|sup|yo+|"
     r"thanks?(?:\s*you)?|thank\s*you|ty|"
     r"ok(?:ay)?|cool|great|nice|"
     r"bye+|goodbye|see\s*you|"
@@ -27,23 +32,68 @@ _GREETING_RE = re.compile(
     re.IGNORECASE,
 )
 
+_OFF_TOPIC = re.compile(
+    r"\b("
+    r"car|cars|truck|trucks|motorbike|motorcycle|driving\s+licence|"
+    r"plane|planes|airplane|airplanes|flight|airport|pilot|"
+    r"football|soccer|rugby|cricket|nba|netflix|movie|movies|"
+    r"bitcoin|crypto|stock\s+market|forex|"
+    r"python\s+code|javascript|programming|coding\s+help|"
+    r"recipe|cooking\s+pasta|video\s+game|playstation|xbox|"
+    r"dating|girlfriend|boyfriend|politics\s+party"
+    r")\b",
+    re.I,
+)
+
+_FARMISH = re.compile(
+    r"\b("
+    r"camp|paddock|pasture|veld|graz|herd|cattle|cow|cows|goat|sheep|ox|"
+    r"livestock|stocking|carrying|overgraz|bush|encroach|ndvi|biomass|"
+    r"rain|rainfall|drought|move|rest\s+camp|tenure|communal|commercial|"
+    r"conservanc|farm|farmer|lsu|fodder|water\s+point|borehole|calf|bull|"
+    r"lamb|kraal|omah|gobabis|neudamm|namibia|rangeland"
+    r")\b",
+    re.I,
+)
+
+_GREETING = re.compile(
+    r"^\s*("
+    r"hey+|hi+|hello+|hola|howdy|howzit|how\s*z\s*it|"
+    r"good\s*(morning|afternoon|evening|day)|"
+    r"morning|afternoon|evening|"
+    r"sawubona|dumela|moro|"
+    r"how\s+are\s+you(\s+doing)?|how('?s|\s+is)\s+it\s+going|"
+    r"what'?s\s+up|wassup|yo+"
+    r")[\s!.?]*$",
+    re.I,
+)
+
+_CHITCHAT = re.compile(
+    r"^\s*("
+    r"thanks|thank\s*you|thank\s*u|ty|cheers|ok|okay|cool|great|nice|"
+    r"bye|goodbye|see\s+you|later|"
+    r"who\s+are\s+you|what('?s|\s+is)\s+your\s+name|"
+    r"what\s+can\s+you\s+(do|help\s+with)|help\s*me\??|"
+    r"are\s+you\s+(there|real|an?\s+ai)"
+    r")[\s!.?]*$",
+    re.I,
+)
+
 
 def is_greeting(message: str) -> bool:
     text = (message or "").strip()
     if not text or len(text) > 80:
         return False
-    return bool(_GREETING_RE.match(text))
+    return bool(_GREETING_RE.match(text) or _GREETING.match(text))
 
 
 def is_basic_question(message: str) -> bool:
     """
-    Definitions / how-to / general knowledge — answer with Gemini online,
-    without running the local pasture pipeline.
+    Definitions / how-to / general knowledge — answer without farm decision cards.
     """
     text = (message or "").strip().lower()
     if not text or is_greeting(text):
         return False
-    # Site-specific ask about their farm → not "basic"
     if re.search(
         r"\b(my|our|this)\s+(camp|pasture|farm|herd|veld|paddock)\b|"
         r"\b(how is|how'?s)\s+(my|the|our)\b|"
@@ -63,12 +113,7 @@ def is_basic_question(message: str) -> bool:
 
 
 def needs_farm_tools(message: str, intents: Optional[list[str]] = None) -> bool:
-    """
-    True when the question needs local pasture/weather/stocking tools.
-
-    Basic/general questions (definitions, how-to) go straight to Gemini online
-    without running the dataset pipeline.
-    """
+    """True when the question needs local pasture/weather/stocking tools."""
     text = (message or "").strip().lower()
     if not text or is_greeting(text) or is_basic_question(text):
         return False
@@ -86,7 +131,6 @@ def needs_farm_tools(message: str, intents: Optional[list[str]] = None) -> bool:
     if any(i in farm_intents for i in intents):
         return True
 
-    # Explicit site/condition asks even if intent stayed "general"
     if re.search(
         r"\b(pasture|grazing|veld|camp|paddock|herd|cattle|goats?|sheep|"
         r"rainfall|rain|ndvi|biomass|cover|stock|carry|drought|"
@@ -96,6 +140,68 @@ def needs_farm_tools(message: str, intents: Optional[list[str]] = None) -> bool:
         return True
 
     return False
+
+
+def classify_conversation(message: str) -> str:
+    """
+    Return conversation mode:
+      greeting | chitchat | off_topic | farm
+    """
+    text = (message or "").strip()
+    if not text:
+        return "chitchat"
+    if _GREETING.match(text) or is_greeting(text):
+        return "greeting"
+    if _CHITCHAT.match(text):
+        return "chitchat"
+    if len(text) <= 24 and not _FARMISH.search(text) and re.match(
+        r"^[\w\s'?!.,]+$", text
+    ):
+        if re.search(r"\b(lol|haha|hmm+|yes|no|sure|please)\b", text, re.I):
+            return "chitchat"
+    if _OFF_TOPIC.search(text) and not _FARMISH.search(text):
+        return "off_topic"
+    return "farm"
+
+
+def conversational_reply(
+    *,
+    mode: str,
+    farmer_name: Optional[str] = None,
+    location: Optional[str] = None,
+) -> str:
+    """Warm fallback replies when Gemini is offline."""
+    name = (farmer_name or "").strip()
+    who = name.split()[0] if name else ""
+    hello = f"Hey{', ' + who if who else ''}"
+    place = f" around {location}" if location else ""
+
+    if mode == "greeting":
+        return (
+            f"{hello}. I'm In Vision — here when you need a clear read on your "
+            f"camps, herd, or rainfall{place}.\n\n"
+            "Ask me anything about grazing, stocking, moving the herd, or how "
+            "the veld is holding up. No rush."
+        )
+    if mode == "chitchat":
+        return (
+            f"{hello if who else 'Got it'}. I'm here for your livestock and "
+            "pasture decisions whenever you're ready — stocking, move timing, "
+            "rainfall, bush, or comparing camps."
+        )
+    if mode == "off_topic":
+        return (
+            "I hear you — but I'm built for Namibian livestock and rangeland "
+            "decisions: camps, grazing pressure, rainfall, stocking, bush, "
+            "and when to move the herd.\n\n"
+            "Cars, planes, and that sort of thing aren't my patch. Want to "
+            "check how your pasture is looking instead?"
+        )
+    return (
+        f"I'm with you{', ' + who if who else ''}. Tell me what you're seeing "
+        "on the farm — overgrazing, rain, stocking, or whether to move — and "
+        "I'll dig into the data and talk it through plainly."
+    )
 
 
 def detect_intents(message: str) -> list[str]:
@@ -184,6 +290,7 @@ def detect_intents(message: str) -> list[str]:
     if not intents:
         intents.append("general")
     return intents
+
 
 def build_intent_answer(
     *,

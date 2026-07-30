@@ -1,5 +1,6 @@
 import Card from "../Card";
 import { priorityStyle } from "./priorityStyles";
+import StatusDot from "./StatusDot";
 
 export default function GrazingConditionsCard({ decision }) {
   const gc = decision?.grazing_conditions;
@@ -13,8 +14,9 @@ export default function GrazingConditionsCard({ decision }) {
           <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
             Overall Status
           </p>
-          <p className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${style.badge}`}>
-            {style.emoji} {gc.overall_status}
+          <p className={`mt-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${style.badge}`}>
+            <StatusDot style={style} />
+            {gc.overall_status}
           </p>
         </div>
         <div>

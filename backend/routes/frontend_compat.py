@@ -193,11 +193,13 @@ def _greeting_response(
 )
 def chat(body: ChatRequest) -> dict[str, Any]:
     """
-    Oryx Ask endpoint.
+    In Vision Ask endpoint — Planner → Executor → Advisor when possible.
 
-    Online + Gemini: Oryx decides which tools to call (pasture dataset, Open-Meteo, …).
+    Online + Gemini: selective tool use via agent pipeline (or Oryx agent fallback).
     Offline: local advisory dataset only.
     """
+    from agent.pipeline import run_pipeline
+
     if is_greeting(body.message):
         location, _ = _resolve_location(body)
         return _greeting_response(
@@ -224,8 +226,68 @@ def chat(body: ChatRequest) -> dict[str, Any]:
     animal = body.livestock_type or body.animal_type
     intents = detect_intents(body.message)
     use_farm_tools = needs_farm_tools(body.message, intents)
+    tier = "free" if body.is_guest else (body.user_tier or "free")
 
-    # --- Online: Oryx agentically chooses tools ---
+    # Prefer In Vision reasoning pipeline (selective tools, no forced move cards).
+    try:
+        piped = run_pipeline(
+            message=body.message,
+            location=location,
+            tier=tier,
+            herd_size=body.herd_size,
+            livestock_type=animal,
+            farm_size_ha=body.farm_size_ha,
+            land_tenure=body.land_tenure,
+            farm_notes=body.farm_notes,
+            farmer_name=body.farmer_name,
+            farm_name=body.farm_name,
+            lat=body.lat,
+            lon=body.lon,
+            history=body.history or [],
+            resolve_notes=resolve_notes,
+        )
+        if piped.get("ok") and piped.get("text"):
+            advisor = piped.get("advisor_payload") or {
+                "intents": [(piped.get("intent") or {}).get("intent") or intents],
+                "mode": mode,
+                "limitations": list(resolve_notes),
+            }
+            advisor["mode"] = mode
+            vision = {
+                "response": piped["text"],
+                "reasoning": str((piped.get("reasoning") or {}).get("reasoning") or ""),
+                "model": piped.get("model"),
+                "tools_used": piped.get("tools_used") or [],
+                "agent": piped.get("assistant") or AGENT_NAME,
+                "mode": mode,
+            }
+            # Only attach decision evidence when pipeline says a recommendation is appropriate
+            if not piped.get("include_decision"):
+                advisor = {
+                    **advisor,
+                    "pasture_data": {},
+                    "weather_data": {},
+                    "grazing_assessment": {},
+                }
+            return build_chat_response(
+                message=body.message,
+                location=location,
+                advisor=advisor,
+                user_tier=body.user_tier or "free",
+                is_guest=bool(body.is_guest),
+                herd_size=body.herd_size,
+                livestock_type=animal,
+                farm_notes=body.farm_notes,
+                farmer_name=body.farmer_name,
+                farm_name=body.farm_name,
+                land_tenure=body.land_tenure,
+                farm_size_ha=body.farm_size_ha,
+                vision_override=vision,
+            )
+    except Exception:
+        pass
+
+    # --- Online: Oryx agentically chooses tools (fallback) ---
     if online and gemini_configured():
         oryx = run_vision_agent(
             message=body.message,

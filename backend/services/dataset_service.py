@@ -46,11 +46,33 @@ def _dataset_path() -> Path:
 
 @lru_cache(maxsize=1)
 def load_advisory_dataframe() -> pd.DataFrame:
+    """
+    Load the runtime advisory table.
+
+    Prefer Supabase (range_sites + range_landsites) when configured;
+    otherwise fall back to the local processed CSV.
+    """
+    from services import supabase_data
+    from services.supabase_client import SupabaseError
+
+    if supabase_data.use_supabase_datasets():
+        try:
+            df, meta = supabase_data.load_advisory_from_supabase()
+            # Stash meta on the cached function for /sites diagnostics
+            load_advisory_dataframe._source_meta = meta  # type: ignore[attr-defined]
+            return df
+        except SupabaseError as exc:
+            # Fall through to CSV so the API stays usable offline
+            load_advisory_dataframe._source_meta = {  # type: ignore[attr-defined]
+                "source": "csv_fallback",
+                "supabase_error": str(exc),
+            }
+
     path = _dataset_path()
     if not path.exists():
         raise FileNotFoundError(
-            f"Processed dataset not found at {path}. "
-            "Run: python scripts/process_dataset.py"
+            f"Processed dataset not found at {path} and Supabase is unavailable. "
+            "Configure SUPABASE_URL/keys or run: python scripts/process_dataset.py"
         )
     df = pd.read_csv(path)
     for col in ["site", "site_code", "region", "plot_name"]:
@@ -60,7 +82,18 @@ def load_advisory_dataframe() -> pd.DataFrame:
             df[col] = df[col].apply(lambda v: str(v) if v is not None else None)
     if "observation_date" in df.columns:
         df["observation_date"] = pd.to_datetime(df["observation_date"], errors="coerce")
+    load_advisory_dataframe._source_meta = {  # type: ignore[attr-defined]
+        "source": "csv",
+        "path": str(path),
+        "rows": int(len(df)),
+    }
     return df
+
+
+def dataset_source_meta() -> dict[str, Any]:
+    """Return metadata about the last successful dataset load."""
+    load_advisory_dataframe()
+    return dict(getattr(load_advisory_dataframe, "_source_meta", {}) or {})
 
 
 def reload_dataset() -> pd.DataFrame:

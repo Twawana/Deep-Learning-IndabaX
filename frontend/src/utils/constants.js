@@ -84,12 +84,14 @@ export const WATER_SOURCE_OPTIONS = [
 ];
 
 export const CHAT_SUGGESTIONS = [
-  "Is this camp overgrazed for my herd?",
-  "What is a safe stocking rate here?",
-  "What if I add 20 cattle and we get 15 mm of rain?",
-  "What if I move the herd in 7 days?",
-  "Should I move my herd given recent rainfall?",
-  "How does pasture compare to last year?",
+  "Is this camp currently overgrazed?",
+  "What’s a safe stocking rate for this area right now?",
+  "Should I move my herd, and roughly when?",
+  "How does pasture compare to the same time last year?",
+  "Given recent rainfall, how long can my herd stay?",
+  "Is bush encroachment getting worse here?",
+  "How does my land compare to similar tenure nearby?",
+  "What if I add 20 cattle?",
 ];
 
 export const DEFAULT_FARM_CONTEXT = {

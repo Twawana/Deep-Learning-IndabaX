@@ -145,11 +145,13 @@ export function useChat() {
           tools_used: data.tools_used || [],
           sources: data.sources || null,
           decision: data.decision || null,
+          conversation_mode: data.conversation_mode || "farm",
           limitations: data.limitations || "",
           user_tier: data.user_tier || effectiveTier,
           agent: data.agent || null,
           mode: data.mode || null,
           location,
+          assistant: data.assistant || { name: "In Vision" },
           timestamp: new Date().toISOString(),
         };
 

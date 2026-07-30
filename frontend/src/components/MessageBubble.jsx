@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { toArray } from "../utils/format";
 import { priorityStyle } from "./decision/priorityStyles";
+import StatusDot from "./decision/StatusDot";
 
 export default function MessageBubble({ message, onSpeak, isSpeaking }) {
   const isUser = message.role === "user";
@@ -14,6 +15,7 @@ export default function MessageBubble({ message, onSpeak, isSpeaking }) {
           .filter(Boolean)
       : toArray(message.limitations);
   const decision = message.decision;
+  const showDecisionUi = Boolean(decision);
   const [showWhy, setShowWhy] = useState(false);
   const [showEvidence, setShowEvidence] = useState(false);
 
@@ -43,13 +45,25 @@ export default function MessageBubble({ message, onSpeak, isSpeaking }) {
           </div>
         )}
 
-        {!isUser && decision?.headline && message.mode !== "greeting" && message.agent !== "Oryx" && (
-          <p className={`mb-2 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${style.badge}`}>
-            {style.emoji} {decision.headline}
+        {!isUser && showDecisionUi && decision?.headline && (
+          <p className={`mb-2 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${style.badge}`}>
+            <StatusDot style={style} />
+            {decision.headline}
           </p>
         )}
 
-        {!isUser && Array.isArray(decision?.what_changed) && decision.what_changed.length > 0 && (
+        {!isUser && message.assistant?.name && (
+          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-veld-600">
+            {message.assistant.name}
+            {message.assistant.powered_by === "gemini"
+              ? message.assistant.mode === "agentic_tool_calling"
+                ? " · agent"
+                : " · AI"
+              : ""}
+          </p>
+        )}
+
+        {!isUser && showDecisionUi && Array.isArray(decision?.what_changed) && decision.what_changed.length > 0 && (
           <ul className="mb-2 space-y-1 rounded-xl bg-mist px-2.5 py-2">
             {decision.what_changed.slice(0, 3).map((item) => (
               <li key={item} className="text-[11px] leading-relaxed text-veld-800">
@@ -63,7 +77,7 @@ export default function MessageBubble({ message, onSpeak, isSpeaking }) {
           {message.content}
         </p>
 
-        {!isUser && recommendations.length > 0 && (
+        {!isUser && showDecisionUi && recommendations.length > 0 && (
           <ul className="mt-2.5 space-y-1.5 border-t border-veld-100 pt-2.5">
             {recommendations.map((item, index) => (
               <li
@@ -77,10 +91,7 @@ export default function MessageBubble({ message, onSpeak, isSpeaking }) {
           </ul>
         )}
 
-        {!isUser &&
-          decision?.explainer?.checks?.length > 0 &&
-          message.mode !== "greeting" &&
-          message.agent !== "Oryx" && (
+        {!isUser && showDecisionUi && decision?.explainer?.checks?.length > 0 && (
           <div className="mt-2.5 border-t border-veld-100 pt-2">
             <p className="text-[11px] font-semibold text-veld-800">
               Why this recommendation?
@@ -104,7 +115,7 @@ export default function MessageBubble({ message, onSpeak, isSpeaking }) {
           </div>
         )}
 
-        {!isUser && toolsUsed.length > 0 && message.user_tier !== "free" && (
+        {!isUser && showDecisionUi && toolsUsed.length > 0 && message.user_tier !== "free" && (
           <p className="mt-2 text-[11px] text-ink-muted">
             Tools:{" "}
             {toolsUsed
@@ -113,7 +124,7 @@ export default function MessageBubble({ message, onSpeak, isSpeaking }) {
           </p>
         )}
 
-        {!isUser && limitations.length > 0 && message.user_tier !== "free" && (
+        {!isUser && showDecisionUi && limitations.length > 0 && message.user_tier !== "free" && (
           <ul className="mt-2 space-y-1 border-t border-veld-100 pt-2">
             {limitations.map((item, index) => (
               <li
@@ -126,7 +137,10 @@ export default function MessageBubble({ message, onSpeak, isSpeaking }) {
           </ul>
         )}
 
-        {!isUser && (message.reasoning || message.sources) && message.user_tier !== "free" && (
+        {!isUser &&
+          showDecisionUi &&
+          (message.reasoning || message.sources) &&
+          message.user_tier !== "free" && (
           <div className="mt-2 flex flex-wrap gap-3">
             {message.reasoning && (
               <button

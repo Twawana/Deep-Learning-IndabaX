@@ -69,7 +69,7 @@ export default function Dashboard() {
             to="/chat"
             className="flex flex-1 items-center justify-center rounded-xl bg-veld-800 py-3 text-sm font-semibold text-white active:bg-veld-900 sm:flex-none sm:px-6"
           >
-            Ask Oryx
+            Ask In Vision
           </Link>
           <Link
             to="/compare"

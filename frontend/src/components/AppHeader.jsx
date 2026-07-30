@@ -9,7 +9,7 @@ const SCREENS = {
     hint: (farm) => farm.location,
   },
   "/chat": {
-    title: "Oryx",
+    title: "Ask In Vision",
     hint: (farm) =>
       farm.herdSize
         ? `${farm.location} · ${farm.herdSize} head`

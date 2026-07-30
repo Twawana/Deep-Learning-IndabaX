@@ -4,6 +4,9 @@ Admin and auth routes for frontend account management.
 Uses per-browser session tokens (X-Session-Token) so multiple clients
 can stay logged in independently. Global current_user_id is no longer used
 as the source of truth for "who is logged in".
+
+Users prefer Supabase `users` when configured; sessions + app_settings stay
+in local admin_state.json.
 """
 
 from __future__ import annotations
@@ -17,37 +20,15 @@ from typing import Any, Literal, Optional
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
+from services import user_store
+from services.supabase_client import SupabaseError
+
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 STATE_PATH = DATA_DIR / "admin_state.json"
 
-DEFAULT_USERS = [
-    {
-        "id": "user-main",
-        "name": "Farm User",
-        "username": "farmer",
-        "email": "farmer@farmar.local",
-        "password": "farmer123",
-        "role": "user",
-        "status": "active",
-        "tier": "free",
-        "ai_usage": 0,
-        "last_login": None,
-    },
-    {
-        "id": "admin-main",
-        "name": "Admin",
-        "username": "admin",
-        "email": "admin@farmar.local",
-        "password": "admin123",
-        "role": "admin",
-        "status": "active",
-        "tier": "premium",
-        "ai_usage": 0,
-        "last_login": None,
-    },
-]
+DEFAULT_USERS = user_store.DEFAULT_USERS
 
 DEFAULT_STATE = {
     "current_user_id": None,  # legacy; kept for file compatibility
@@ -144,7 +125,7 @@ def _public_user(user: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _load_state() -> dict[str, Any]:
+def _load_local_raw() -> dict[str, Any]:
     if not STATE_PATH.exists():
         return dict(DEFAULT_STATE)
     try:
@@ -153,23 +134,62 @@ def _load_state() -> dict[str, Any]:
         return dict(DEFAULT_STATE)
 
 
-def _save_state(state: dict[str, Any]) -> dict[str, Any]:
+def _save_local(state: dict[str, Any]) -> dict[str, Any]:
+    """Persist sessions + settings locally. Users are omitted when using Supabase."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    payload = {
+        "current_user_id": None,
+        "sessions": state.get("sessions") or {},
+        "app_settings": state.get("app_settings") or DEFAULT_STATE["app_settings"],
+    }
+    if not user_store.use_supabase_users():
+        payload["users"] = state.get("users") or DEFAULT_USERS
+    STATE_PATH.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return state
+
+
+def _load_users_from_sources(local_users: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if user_store.use_supabase_users():
+        try:
+            return [
+                _normalize_user(user) for user in user_store.ensure_default_users()
+            ]
+        except SupabaseError:
+            # Keep API usable if Supabase is briefly down
+            return [_normalize_user(user) for user in (local_users or DEFAULT_USERS)]
+    return [_normalize_user(user) for user in (local_users or DEFAULT_USERS)]
+
+
+def _load_state() -> dict[str, Any]:
+    return _load_local_raw()
+
+
+def _save_state(state: dict[str, Any]) -> dict[str, Any]:
+    return _save_local(state)
 
 
 def _normalize_user(user: dict[str, Any]) -> dict[str, Any]:
     defaults = next(
         (item for item in DEFAULT_USERS if item["id"] == user.get("id")),
-        DEFAULT_USERS[0],
+        None,
     )
-    username = (user.get("username") or defaults.get("username") or "").strip().lower()
-    email = (user.get("email") or defaults.get("email") or "").strip().lower()
-    password = user.get("password") or defaults.get("password") or "changeme"
+    username = (
+        user.get("username")
+        or (defaults or {}).get("username")
+        or ""
+    ).strip().lower()
+    email = (
+        user.get("email")
+        or (defaults or {}).get("email")
+        or ""
+    ).strip().lower()
+    password = user.get("password")
+    if not password and defaults:
+        password = defaults.get("password") or ""
+    password = password or ""
     return {
         **user,
-        "username": username or email.split("@")[0],
+        "username": username or (email.split("@")[0] if email else "user"),
         "email": email,
         "password": password,
         "tier": user.get("tier")
@@ -180,7 +200,7 @@ def _normalize_user(user: dict[str, Any]) -> dict[str, Any]:
 
 
 def _normalize_state(raw: dict[str, Any]) -> dict[str, Any]:
-    users = [_normalize_user(user) for user in (raw.get("users") or DEFAULT_USERS)]
+    users = _load_users_from_sources(raw.get("users") or DEFAULT_USERS)
     sessions = {
         str(token): str(uid)
         for token, uid in (raw.get("sessions") or {}).items()
@@ -258,11 +278,18 @@ def _require_user(
 
 
 def _find_user(state: dict[str, Any], identifier: str) -> dict[str, Any] | None:
-    needle = identifier.strip().lower()
-    for user in state["users"]:
-        if user.get("email", "").lower() == needle or user.get("username", "").lower() == needle:
-            return user
-    return None
+    return user_store.find_user(state["users"], identifier)
+
+
+def _persist_user_fields(user: dict[str, Any], fields: dict[str, Any]) -> dict[str, Any]:
+    """Write user field updates to Supabase when enabled; else mutate local state object."""
+    if user_store.use_supabase_users():
+        try:
+            return _normalize_user(user_store.update_user(str(user["id"]), fields))
+        except SupabaseError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+    user.update(fields)
+    return user
 
 
 @router.get("/state", summary="Fetch auth/admin state for this browser session")
@@ -278,18 +305,22 @@ def admin_state(
 def login(body: CredentialLoginBody) -> dict[str, Any]:
     state = _normalize_state(_load_state())
     user = _find_user(state, body.identifier)
-    if not user or user.get("password") != body.password:
+    if not user or not user_store.verify_password(body.password, user.get("password")):
         raise HTTPException(status_code=401, detail="Invalid email/username or password.")
     if user.get("status") != "active":
         raise HTTPException(status_code=400, detail="This account is disabled.")
-    user["last_login"] = _now()
-    token = _issue_session(state, user["id"])
+    updated = _persist_user_fields(user, {"last_login": _now()})
+    # Refresh list entry
+    state["users"] = [
+        updated if u["id"] == updated["id"] else u for u in state["users"]
+    ]
+    token = _issue_session(state, updated["id"])
     state = _save_state(state)
     return _state_response(
         state,
-        message=f"Logged in as {user['name']}.",
+        message=f"Logged in as {updated['name']}.",
         session_token=token,
-        current_user=user,
+        current_user=updated,
     )
 
 
@@ -310,30 +341,54 @@ def register(body: RegisterBody) -> dict[str, Any]:
     if _find_user(state, email) or _find_user(state, username):
         raise HTTPException(status_code=400, detail="Email or username already exists.")
 
-    user_id = (
-        "user-"
-        + "".join(ch if ch.isalnum() else "-" for ch in username).strip("-")
-        + "-"
-        + str(len(state["users"]) + 1)
-    )
-    new_user = {
-        "id": user_id,
-        "name": name,
-        "username": username,
-        "email": email,
-        "password": password,
-        "role": "user",
-        "status": "active",
-        "tier": "free",
-        "ai_usage": 0,
-        "last_login": _now(),
-    }
-    state["users"].append(new_user)
-    token = _issue_session(state, user_id)
+    if user_store.use_supabase_users():
+        try:
+            new_user = _normalize_user(
+                user_store.create_user(
+                    {
+                        "name": name,
+                        "username": username,
+                        "email": email,
+                        "password": password,
+                        "role": "user",
+                        "status": "active",
+                        "tier": "free",
+                        "ai_usage": 0,
+                        "last_login": _now(),
+                    }
+                )
+            )
+        except SupabaseError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        state["users"].append(new_user)
+        saved_where = "account database"
+    else:
+        user_id = (
+            "user-"
+            + "".join(ch if ch.isalnum() else "-" for ch in username).strip("-")
+            + "-"
+            + str(len(state["users"]) + 1)
+        )
+        new_user = {
+            "id": user_id,
+            "name": name,
+            "username": username,
+            "email": email,
+            "password": password,
+            "role": "user",
+            "status": "active",
+            "tier": "free",
+            "ai_usage": 0,
+            "last_login": _now(),
+        }
+        state["users"].append(new_user)
+        saved_where = "local server"
+
+    token = _issue_session(state, new_user["id"])
     state = _save_state(state)
     return _state_response(
         state,
-        message=f"Account created. Welcome, {name}!",
+        message=f"Account created and saved to the {saved_where}. Welcome, {name}!",
         session_token=token,
         current_user=new_user,
     )
@@ -357,7 +412,6 @@ def upgrade_subscription(
 ) -> dict[str, Any]:
     state = _normalize_state(_load_state())
     current = _require_user(state, x_session_token)
-
     payment_meta: Optional[dict[str, Any]] = None
     if body.tier == "premium":
         err = _validate_premium_payment(body.payment)
@@ -388,6 +442,14 @@ def upgrade_subscription(
             user["subscription"] = {"plan": "free", "status": "cancelled"}
         current = user
         break
+    # Also persist tier to user store / Supabase when available
+    try:
+        current = _persist_user_fields(current, {"tier": body.tier})
+        state["users"] = [
+            current if u["id"] == current["id"] else u for u in state["users"]
+        ]
+    except Exception:
+        pass
     state = _save_state(state)
     if body.tier == "premium":
         last4 = (payment_meta or {}).get("last4", "****")
@@ -409,13 +471,14 @@ def record_ai_usage(
     current = _user_for_token(state, x_session_token)
     if not current:
         return _state_response(state, message="Guest usage not tracked.", current_user=None)
-    for user in state["users"]:
-        if user["id"] == current["id"]:
-            user["ai_usage"] = int(user.get("ai_usage") or 0) + 1
-            current = user
-            break
+    updated = _persist_user_fields(
+        current, {"ai_usage": int(current.get("ai_usage") or 0) + 1}
+    )
+    state["users"] = [
+        updated if u["id"] == updated["id"] else u for u in state["users"]
+    ]
     state = _save_state(state)
-    return _state_response(state, message="AI usage recorded.", current_user=current)
+    return _state_response(state, message="AI usage recorded.", current_user=updated)
 
 
 @router.post("/users", summary="Add user")
@@ -432,26 +495,48 @@ def add_user(
     username = (body.username or email.split("@")[0]).strip().lower()
     if _find_user(state, email) or _find_user(state, username):
         raise HTTPException(status_code=400, detail="Email or username already exists.")
-    user_id = (
-        "user-"
-        + "".join(ch if ch.isalnum() else "-" for ch in clean.lower()).strip("-")
-        + "-"
-        + str(len(state["users"]) + 1)
-    )
-    state["users"].append(
-        {
-            "id": user_id,
-            "name": clean,
-            "username": username,
-            "email": email,
-            "password": body.password,
-            "role": body.role,
-            "status": "active",
-            "tier": body.tier,
-            "ai_usage": 0,
-            "last_login": None,
-        }
-    )
+
+    if user_store.use_supabase_users():
+        try:
+            created = _normalize_user(
+                user_store.create_user(
+                    {
+                        "name": clean,
+                        "username": username,
+                        "email": email,
+                        "password": body.password,
+                        "role": body.role,
+                        "status": "active",
+                        "tier": body.tier,
+                        "ai_usage": 0,
+                        "last_login": None,
+                    }
+                )
+            )
+        except SupabaseError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        state["users"].append(created)
+    else:
+        user_id = (
+            "user-"
+            + "".join(ch if ch.isalnum() else "-" for ch in clean.lower()).strip("-")
+            + "-"
+            + str(len(state["users"]) + 1)
+        )
+        state["users"].append(
+            {
+                "id": user_id,
+                "name": clean,
+                "username": username,
+                "email": email,
+                "password": body.password,
+                "role": body.role,
+                "status": "active",
+                "tier": body.tier,
+                "ai_usage": 0,
+                "last_login": None,
+            }
+        )
     state = _save_state(state)
     return _state_response(state, message=f"{clean} added.", current_user=actor)
 
@@ -466,20 +551,20 @@ def update_user(
     actor = _require_user(state, x_session_token)
     if actor.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required.")
-    updated = False
-    for user in state["users"]:
-        if user["id"] != user_id:
-            continue
-        if body.role is not None:
-            user["role"] = body.role
-        if body.status is not None:
-            user["status"] = body.status
-        if body.tier is not None:
-            user["tier"] = body.tier
-        updated = True
-        break
-    if not updated:
+    target = next((u for u in state["users"] if u["id"] == user_id), None)
+    if not target:
         raise HTTPException(status_code=404, detail="User not found.")
+    fields: dict[str, Any] = {}
+    if body.role is not None:
+        fields["role"] = body.role
+    if body.status is not None:
+        fields["status"] = body.status
+    if body.tier is not None:
+        fields["tier"] = body.tier
+    updated = _persist_user_fields(target, fields) if fields else target
+    state["users"] = [
+        updated if u["id"] == updated["id"] else u for u in state["users"]
+    ]
     state = _save_state(state)
     return _state_response(state, message="User updated.", current_user=actor)
 
@@ -489,15 +574,25 @@ def delete_user(
     user_id: str,
     x_session_token: Optional[str] = Header(default=None, alias="X-Session-Token"),
 ) -> dict[str, Any]:
-    if user_id == "admin-main":
+    if user_id in {"admin-main"}:
         raise HTTPException(status_code=400, detail="Default admin cannot be removed.")
     state = _normalize_state(_load_state())
     actor = _require_user(state, x_session_token)
     if actor.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required.")
-    users = [user for user in state["users"] if user["id"] != user_id]
-    if len(users) == len(state["users"]):
+    target = next((u for u in state["users"] if u["id"] == user_id), None)
+    if not target:
         raise HTTPException(status_code=404, detail="User not found.")
+    if target.get("username") == "admin":
+        raise HTTPException(status_code=400, detail="Default admin cannot be removed.")
+
+    if user_store.use_supabase_users():
+        try:
+            user_store.delete_user(user_id)
+        except SupabaseError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    users = [user for user in state["users"] if user["id"] != user_id]
     state["users"] = users
     state["sessions"] = {
         t: uid for t, uid in (state.get("sessions") or {}).items() if uid != user_id
