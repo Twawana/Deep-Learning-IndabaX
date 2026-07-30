@@ -11,7 +11,13 @@ function loadStoredProfile() {
   try {
     const raw = localStorage.getItem(FARM_STORAGE_KEY);
     if (!raw) return DEFAULT_FARM_CONTEXT;
-    return { ...DEFAULT_FARM_CONTEXT, ...JSON.parse(raw) };
+    const parsed = { ...DEFAULT_FARM_CONTEXT, ...JSON.parse(raw) };
+    // Migrate away from unsupported saved towns
+    const known = NAMIBIA_LOCATIONS.some((loc) => loc.name === parsed.location);
+    if (!known) {
+      return { ...DEFAULT_FARM_CONTEXT };
+    }
+    return parsed;
   } catch {
     return DEFAULT_FARM_CONTEXT;
   }

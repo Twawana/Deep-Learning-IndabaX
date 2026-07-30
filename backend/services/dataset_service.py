@@ -16,22 +16,32 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DATASET_PATH = ROOT / "data" / "processed" / "advisory_dataset.csv"
 
-# Farmer-friendly place names → dataset site / region search terms.
-# Only maps to real sites/ecoregions present in the processed data.
+# Farmer-friendly place names → dataset SITE names (prefer sites over whole ecoregions).
+# Only maps to real sites present in the processed data.
 PLACE_ALIASES: dict[str, str] = {
-    "gobabis": "Central Kalahari",
+    # Gobabis area → Molly (Central Kalahari); Cala is also nearby but Molly is the default.
+    "gobabis": "Molly",
     "windhoek": "Neudamm",
     "keetmanshoop": "Keetmanshop",
+    "keetmanshop": "Keetmanshop",
     "katima": "Katima Mulilo Quarantine Station",
     "katima mulilo": "Katima Mulilo Quarantine Station",
     "otjiwarongo": "Lardner",
     "outjo": "Ghaub",
 }
 
+# Minimum query length for fuzzy "site name contains query" matching.
+MIN_PARTIAL_QUERY_LEN = 4
+
 
 def _dataset_path() -> Path:
     env_path = os.getenv("ADVISORY_DATASET_PATH")
-    return Path(env_path) if env_path else DEFAULT_DATASET_PATH
+    if not env_path:
+        return DEFAULT_DATASET_PATH
+    path = Path(env_path)
+    if not path.is_absolute():
+        path = (ROOT / path).resolve()
+    return path
 
 
 @lru_cache(maxsize=1)
@@ -45,7 +55,9 @@ def load_advisory_dataframe() -> pd.DataFrame:
     df = pd.read_csv(path)
     for col in ["site", "site_code", "region", "plot_name"]:
         if col in df.columns:
-            df[col] = df[col].astype(str)
+            # Avoid turning real NaN into the string "nan"
+            df[col] = df[col].where(df[col].notna(), None)
+            df[col] = df[col].apply(lambda v: str(v) if v is not None else None)
     if "observation_date" in df.columns:
         df["observation_date"] = pd.to_datetime(df["observation_date"], errors="coerce")
     return df
@@ -66,6 +78,12 @@ def resolve_query(query: str) -> tuple[str, str]:
     Resolve a farmer query to (matched_on, match_value).
 
     matched_on is one of: alias, site, site_code, region, plot_name, unresolved
+
+    Matching order (tightened to avoid short-substring false hits):
+    1. Exact alias
+    2. Exact site / site_code / region / plot
+    3. Partial only if query length >= MIN_PARTIAL_QUERY_LEN
+       and (query is contained in site name OR site name is contained in query)
     """
     q = _norm(query)
     if not q:
@@ -76,35 +94,79 @@ def resolve_query(query: str) -> tuple[str, str]:
 
     df = load_advisory_dataframe()
 
-    # Exact site
-    sites = { _norm(s): s for s in df["site"].dropna().unique() }
+    sites = {_norm(s): s for s in df["site"].dropna().unique()}
     if q in sites:
         return "site", sites[q]
 
-    # Exact site code
-    codes = { _norm(c): c for c in df["site_code"].dropna().unique() }
+    codes = {_norm(c): c for c in df["site_code"].dropna().unique()}
     if q in codes:
         return "site_code", codes[q]
 
-    # Exact region / ecoregion
-    regions = { _norm(r): r for r in df["region"].dropna().unique() }
+    regions = {_norm(r): r for r in df["region"].dropna().unique()}
     if q in regions:
         return "region", regions[q]
 
-    # Exact plot
-    plots = { _norm(p): p for p in df["plot_name"].dropna().unique() }
+    plots = {_norm(p): p for p in df["plot_name"].dropna().unique()}
     if q in plots:
         return "plot_name", plots[q]
 
-    # Partial contains (site first, then region)
-    for original in sorted(sites.values(), key=len):
-        if q in _norm(original) or _norm(original) in q:
-            return "site", original
-    for original in sorted(regions.values(), key=len, reverse=True):
-        if q in _norm(original) or _norm(original) in q:
-            return "region", original
+    # Safe partial for sites only. Regions stay exact-match (above) so
+    # fragments like "highland" do not pull entire ecoregions.
+    if len(q) >= MIN_PARTIAL_QUERY_LEN:
+        site_hits = [
+            original
+            for original in sites.values()
+            if _token_match(q, _norm(original))
+        ]
+        if site_hits:
+            site_hits.sort(key=lambda s: (abs(len(_norm(s)) - len(q)), len(s)))
+            return "site", site_hits[0]
 
     return "unresolved", query
+
+
+def _token_match(query: str, candidate: str) -> bool:
+    """
+    Match when query equals candidate, or the farmer typed the site name plus
+    extra words. Single-token queries only match the *first* token of a site
+    (or a prefix of it) so fragments like "west" / "station" / "highland"
+    do not hitch onto trailing qualifiers.
+    """
+    if not query or not candidate:
+        return False
+    if query == candidate:
+        return True
+
+    q_tokens = query.split()
+    c_tokens = candidate.split()
+
+    # Candidate name appears as a contiguous phrase inside a longer farmer query
+    # e.g. "molly farm" → Molly
+    if len(candidate) >= MIN_PARTIAL_QUERY_LEN and len(c_tokens) <= len(q_tokens):
+        for i in range(len(q_tokens) - len(c_tokens) + 1):
+            if q_tokens[i : i + len(c_tokens)] == c_tokens:
+                return True
+
+    # Multi-token query: require contiguous phrase inside candidate
+    if len(q_tokens) >= 2:
+        for i in range(len(c_tokens) - len(q_tokens) + 1):
+            if c_tokens[i : i + len(q_tokens)] == q_tokens:
+                return True
+        return False
+
+    # Single-token query: only match against the primary (first) token
+    q = q_tokens[0]
+    first = c_tokens[0]
+    if len(q) < MIN_PARTIAL_QUERY_LEN:
+        return False
+    if first == q:
+        return True
+    # Prefix either way for typos / short forms of the primary name
+    if len(first) >= MIN_PARTIAL_QUERY_LEN and (
+        first.startswith(q) or q.startswith(first)
+    ):
+        return True
+    return False
 
 
 def filter_by_query(query: str) -> tuple[pd.DataFrame, str, Optional[str]]:
@@ -119,7 +181,6 @@ def filter_by_query(query: str) -> tuple[pd.DataFrame, str, Optional[str]]:
     df = load_advisory_dataframe()
     search_term = match_value
 
-    # Alias resolves to a site or region string — detect which.
     if matched_on == "alias":
         site_hit = df["site"].str.lower() == search_term.lower()
         region_hit = df["region"].str.lower() == search_term.lower()
@@ -127,12 +188,7 @@ def filter_by_query(query: str) -> tuple[pd.DataFrame, str, Optional[str]]:
             return df.loc[site_hit].copy(), "alias->site", search_term
         if region_hit.any():
             return df.loc[region_hit].copy(), "alias->region", search_term
-        # Partial region/site for alias target
-        mask = (
-            df["site"].str.lower().str.contains(search_term.lower(), na=False)
-            | df["region"].str.lower().str.contains(search_term.lower(), na=False)
-        )
-        return df.loc[mask].copy(), "alias", search_term
+        return pd.DataFrame(), "unresolved", None
 
     if matched_on == "site":
         return df.loc[df["site"] == search_term].copy(), matched_on, search_term
@@ -175,6 +231,51 @@ def representative_coordinates(df: pd.DataFrame) -> Optional[tuple[float, float,
     return float(lat), float(lon), meta
 
 
+def nearest_site_by_coordinates(
+    latitude: float,
+    longitude: float,
+    *,
+    max_distance_km: float = 150.0,
+) -> Optional[tuple[str, float]]:
+    """
+    Find nearest research site by mean plot coordinates.
+    Returns (site_name, distance_km) or None if nothing within max_distance_km.
+    """
+    df = load_advisory_dataframe()
+    latest = latest_per_plot(df)
+    if latest.empty:
+        return None
+
+    rows: list[tuple[str, float]] = []
+    for site, group in latest.groupby("site"):
+        if site is None or str(site).lower() in {"none", "nan"}:
+            continue
+        lat = pd.to_numeric(group["latitude"], errors="coerce").mean()
+        lon = pd.to_numeric(group["longitude"], errors="coerce").mean()
+        if pd.isna(lat) or pd.isna(lon):
+            continue
+        dist = _haversine_km(latitude, longitude, float(lat), float(lon))
+        rows.append((str(site), dist))
+
+    if not rows:
+        return None
+    rows.sort(key=lambda item: item[1])
+    site, dist = rows[0]
+    if dist > max_distance_km:
+        return None
+    return site, dist
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    from math import asin, cos, radians, sin, sqrt
+
+    r = 6371.0
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
+    return 2 * r * asin(sqrt(a))
+
+
 def row_to_dict(row: pd.Series) -> dict[str, Any]:
     data: dict[str, Any] = {}
     for key, value in row.items():
@@ -201,3 +302,11 @@ def list_sites() -> list[dict[str, str]]:
         .sort_values("site")
         .to_dict(orient="records")
     )
+
+
+def list_supported_place_aliases() -> list[dict[str, str]]:
+    """Aliases the API accepts for farmer-friendly town names."""
+    return [
+        {"query": key, "maps_to": value}
+        for key, value in sorted(PLACE_ALIASES.items())
+    ]

@@ -7,8 +7,21 @@ import { useFarmContext } from "../context/FarmContext";
 import { formatLabel, formatValue, toArray } from "../utils/format";
 import { NAMIBIA_LOCATIONS } from "../utils/constants";
 
-const WEATHER_KEYS = ["temperature", "rainfall", "rainfall_last_30_days", "forecast_total_mm", "source"];
-const PASTURE_KEYS = ["vegetation_cover", "bush_encroachment", "biomass", "grazing_pressure", "observation_date", "confidence"];
+const WEATHER_KEYS = [
+  "temperature",
+  "rainfall",
+  "rainfall_last_7_days",
+  "forecast_total_mm",
+  "source",
+];
+const PASTURE_KEYS = [
+  "vegetation_cover",
+  "bush_encroachment",
+  "biomass",
+  "grazing_pressure",
+  "observation_date",
+  "confidence",
+];
 
 function pickEntries(data, keys) {
   if (!data || typeof data !== "object") return [];
@@ -68,6 +81,7 @@ export default function Dashboard() {
           {NAMIBIA_LOCATIONS.map((loc) => (
             <option key={loc.name} value={loc.name}>
               {loc.name}
+              {loc.mapsTo && loc.mapsTo !== loc.name ? ` → ${loc.mapsTo}` : ""}
             </option>
           ))}
         </select>

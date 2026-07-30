@@ -42,8 +42,13 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+    ],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -69,7 +74,10 @@ def root() -> dict[str, str]:
 @app.get("/sites", tags=["meta"], summary="List research sites")
 def sites() -> dict:
     """List available research sites from the processed advisory dataset."""
-    return {"sites": dataset_service.list_sites()}
+    return {
+        "sites": dataset_service.list_sites(),
+        "aliases": dataset_service.list_supported_place_aliases(),
+    }
 
 
 @app.get("/tools", tags=["meta"], summary="List Gemini-ready tool manifests")

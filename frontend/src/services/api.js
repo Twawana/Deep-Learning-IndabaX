@@ -90,24 +90,26 @@ export async function getRangeland(location, extra = {}) {
  * Falls back to nearest_town / location query param if lat/lon-only callers pass extras.location.
  */
 export async function getWeather(lat, lon, extra = {}) {
-  const region =
+  const region = (
     extra.location ||
-    extra.region ||
     extra.nearest_town ||
-    (lat != null && lon != null ? null : "Gobabis");
+    extra.region ||
+    ""
+  ).trim();
 
-  // Backend weather is region-based; use farm location whenever available.
+  // Never invent a town. Backend weather resolves coordinates from the dataset.
   if (!region) {
     const err = new Error(
-      "Weather requires a location name that maps to the rangeland dataset."
+      "Weather requires a supported town or research site."
     );
     throw err;
   }
 
+  const pastDays = extra.past_days ?? 7;
   const { data } = await api.get(`/weather/${encodeRegion(region)}`, {
     params: {
       forecast_days: extra.forecast_days ?? Math.min(Number(extra.days) || 7, 16),
-      past_days: extra.past_days ?? 7,
+      past_days: pastDays,
     },
   });
 
@@ -119,6 +121,7 @@ export async function getWeather(lat, lon, extra = {}) {
 
   const forecastDaily = data.forecast?.daily || [];
   const today = forecastDaily[0] || {};
+  const recentDays = data.recent_rainfall?.days ?? pastDays;
   const recentTotal = data.recent_rainfall?.total_precipitation_mm;
   const forecastTotal = data.forecast?.total_precipitation_mm;
 
@@ -132,6 +135,8 @@ export async function getWeather(lat, lon, extra = {}) {
   const precipToday = today.precipitation_mm;
   const rainfall =
     precipToday == null ? null : `${precipToday} mm (near-term)`;
+  const recentLabel =
+    recentTotal == null ? null : `${recentTotal} mm (last ${recentDays} days)`;
 
   return {
     ...data,
@@ -139,8 +144,9 @@ export async function getWeather(lat, lon, extra = {}) {
     rainfall,
     humidity: null,
     recent_rainfall_mm: recentTotal,
-    rainfall_last_30_days:
-      recentTotal == null ? null : `${recentTotal} mm (recent window)`,
+    rainfall_recent: recentLabel,
+    // Honest alias — value is the Open-Meteo recent window (default 7 days), not 30.
+    rainfall_last_7_days: recentLabel,
     forecast_total_mm: forecastTotal,
     drought_indicator: null,
     source: data.source || "open-meteo",

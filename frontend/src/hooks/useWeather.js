@@ -1,18 +1,26 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getWeather } from "../services/api";
+import { datasetLocation } from "../utils/constants";
 import { getErrorMessage } from "../utils/format";
+import { useFarmContext } from "../context/FarmContext";
 
 export function useWeather() {
+  const farm = useFarmContext();
+  const locationKey = datasetLocation(farm);
   const [data, setData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const fetchWeather = useCallback(async (lat, lon, extra = {}) => {
-    const latitude = Number(lat);
-    const longitude = Number(lon);
+  // Drop stale results when the farmer changes town/site
+  useEffect(() => {
+    setData(null);
+    setError(null);
+  }, [locationKey]);
 
-    if (Number.isNaN(latitude) || Number.isNaN(longitude)) {
-      setError("Please provide valid latitude and longitude values.");
+  const fetchWeather = useCallback(async (lat, lon, extra = {}) => {
+    const location = (extra.location || extra.nearest_town || "").trim();
+    if (!location) {
+      setError("Please select a supported town or research site.");
       return;
     }
 
@@ -20,7 +28,10 @@ export function useWeather() {
     setError(null);
 
     try {
-      const result = await getWeather(latitude, longitude, extra);
+      const result = await getWeather(lat, lon, {
+        ...extra,
+        location,
+      });
       setData(result);
     } catch (err) {
       setData(null);

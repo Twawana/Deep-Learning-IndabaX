@@ -38,6 +38,7 @@ def advisor_context(body: AdvisorRequest) -> dict:
         body.region,
         herd_size=body.herd_size,
         animal_type=body.animal_type,
+        pasture_data=pasture_data,
     )
 
     comparison = None

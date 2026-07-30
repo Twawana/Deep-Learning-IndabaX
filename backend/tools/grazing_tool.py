@@ -24,24 +24,20 @@ def calculate_grazing_pressure(
     herd_size: Optional[int] = None,
     animal_type: Optional[str] = None,
     carrying_capacity: Optional[float] = None,
+    pasture_data: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """
     Calculate grazing pressure context for a location and optional herd details.
 
-    Args:
-        location: Namibian place / site / region.
-        herd_size: Farmer-provided herd size.
-        animal_type: e.g. cattle, goats, sheep.
-        carrying_capacity: Only if known from an external source — never fabricated.
-
-    Returns:
-        JSON with grazing_risk, reason, confidence, limitations, and signals.
+    Pass pasture_data to avoid a second dataset lookup when the caller already has it.
     """
-    pasture = get_pasture_data(location)
+    pasture = pasture_data if pasture_data is not None else get_pasture_data(location)
+    animal = (animal_type or "").strip().lower() or None
+
     if not pasture.get("found"):
         result = assess_grazing(
             herd_size=herd_size,
-            animal_type=animal_type,
+            animal_type=animal,
             carrying_capacity=carrying_capacity,
         )
         result["limitations"] = list(
@@ -60,16 +56,20 @@ def calculate_grazing_pressure(
     metrics = pasture.get("pasture") or {}
     result = assess_grazing(
         herd_size=herd_size,
-        animal_type=animal_type,
+        animal_type=animal,
         vegetation_cover=metrics.get("vegetation_cover"),
         biomass=metrics.get("biomass"),
         bush_encroachment=metrics.get("bush_encroachment"),
         recorded_livestock_count=metrics.get("grazing_pressure_recorded"),
         carrying_capacity=carrying_capacity,
     )
-    result["limitations"] = list(
-        dict.fromkeys((result.get("limitations") or []) + (pasture.get("limitations") or []))
-    )
+    extra_limits: list[str] = list(pasture.get("limitations") or [])
+    if animal and animal not in {"cattle", "mixed"}:
+        extra_limits.append(
+            f"Animal type '{animal}' noted, but risk heuristics are forage/cover based "
+            "and not species-calibrated (no LSU conversion in dataset)."
+        )
+    result["limitations"] = list(dict.fromkeys((result.get("limitations") or []) + extra_limits))
     if result["confidence"] == "high" and pasture.get("confidence") != "high":
         result["confidence"] = pasture.get("confidence") or "medium"
 

@@ -45,9 +45,11 @@ def fetch_forecast(
     Fetch recent + forecast daily rainfall/temperature for a coordinate.
 
     Uses Open-Meteo `past_days` + `forecast_days` (no invented values).
-    Returns normalized dict with `recent_daily` and `forecast_daily` split on today.
+    Returns normalized dict with `recent_daily` and `forecast_daily` split on
+    Africa/Windhoek "today" (not the server local calendar).
     """
-    from datetime import date
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
 
     days = max(1, min(int(forecast_days), 16))
     history = max(0, min(int(past_days), 92))
@@ -106,7 +108,7 @@ def fetch_forecast(
             }
         )
 
-    today = date.today().isoformat()
+    today = datetime.now(ZoneInfo("Africa/Windhoek")).date().isoformat()
     recent_daily = [r for r in rows if r["date"] < today]
     forecast_daily = [r for r in rows if r["date"] >= today]
 

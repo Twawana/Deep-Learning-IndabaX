@@ -10,7 +10,7 @@ AI-powered rangeland and pasture advisory **mobile app** for Namibian livestock 
 | Live weather/rainfall (Open-Meteo / NASA POWER via backend) | **Weather** tab + agent tools via `/chat` |
 | LLM agentic advice with reasoning | **Ask** tab — shows response, reasoning, tools used, sources |
 | Conversational UI (location + herd size) | **Ask** tab — farm context bar |
-| Speech-to-text / text-to-speech (bonus) | Mic button + **Listen** on AI replies (Web Speech API) |
+| Speech-to-text / text-to-speech (bonus) | **Ask** tab: mic button (STT), **Listen** / **Read replies aloud** (TTS). Web Speech API — best in Chrome/Edge. |
 
 Full backend request/response shapes: see [`API.md`](./API.md).
 

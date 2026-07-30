@@ -3,13 +3,13 @@ import ErrorAlert from "../components/ErrorAlert";
 import Loader from "../components/Loader";
 import { useFarmContext } from "../context/FarmContext";
 import { useWeather } from "../hooks/useWeather";
-import { NAMIBIA_LOCATIONS } from "../utils/constants";
+import { NAMIBIA_LOCATIONS, datasetLocation } from "../utils/constants";
 import { formatValue, toArray } from "../utils/format";
 
 const KEYS = [
   { key: "temperature", label: "Temperature" },
   { key: "rainfall", label: "Near-term rain" },
-  { key: "rainfall_last_30_days", label: "Recent rain total" },
+  { key: "rainfall_last_7_days", label: "Recent rain total" },
   { key: "forecast_total_mm", label: "Forecast rain total" },
   { key: "source", label: "Source" },
   { key: "confidence", label: "Confidence" },
@@ -21,7 +21,11 @@ export default function Weather() {
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    const location = farm.customLocation || farm.location;
+    const location = datasetLocation(farm);
+    if (!location) {
+      setError("Select a supported town or research site.");
+      return;
+    }
     fetchWeather(farm.lat, farm.lon, {
       days: 7,
       location,
@@ -47,6 +51,7 @@ export default function Weather() {
           {NAMIBIA_LOCATIONS.map((loc) => (
             <option key={loc.name} value={loc.name}>
               {loc.name}
+              {loc.mapsTo && loc.mapsTo !== loc.name ? ` → ${loc.mapsTo}` : ""}
             </option>
           ))}
         </select>

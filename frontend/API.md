@@ -23,6 +23,6 @@ Later: replace internals with Gemini tool-calling while keeping this response sh
 
 ## Pasture / weather notes
 
-- Location names like **Gobabis** map via backend place aliases to dataset sites (e.g. Central Kalahari → Cala/Molly).
+- Location names like **Gobabis** map via backend place aliases to a single research site (**Molly**), not the whole Central Kalahari ecoregion.
 - Weather uses **dataset coordinates**, not phone GPS.
 - Fields such as `carrying_capacity`, `ndvi`, `soil_quality` are **not** in the processed dataset and stay null / listed in limitations.

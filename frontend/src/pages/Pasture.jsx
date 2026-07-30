@@ -3,7 +3,7 @@ import ErrorAlert from "../components/ErrorAlert";
 import Loader from "../components/Loader";
 import { useFarmContext } from "../context/FarmContext";
 import { usePasture } from "../hooks/usePasture";
-import { NAMIBIA_LOCATIONS } from "../utils/constants";
+import { NAMIBIA_LOCATIONS, datasetLocation } from "../utils/constants";
 import { formatLabel, formatValue, toArray } from "../utils/format";
 
 const KEY_FIELDS = [
@@ -23,7 +23,11 @@ export default function Pasture() {
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    const location = farm.customLocation || farm.location;
+    const location = datasetLocation(farm);
+    if (!location) {
+      setError("Select a supported town or research site.");
+      return;
+    }
     fetchPasture(location, { region: farm.region });
   };
 
@@ -48,6 +52,7 @@ export default function Pasture() {
           {NAMIBIA_LOCATIONS.map((loc) => (
             <option key={loc.name} value={loc.name}>
               {loc.name}
+              {loc.mapsTo && loc.mapsTo !== loc.name ? ` → ${loc.mapsTo}` : ""}
             </option>
           ))}
         </select>

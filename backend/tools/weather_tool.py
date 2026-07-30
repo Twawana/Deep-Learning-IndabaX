@@ -98,7 +98,7 @@ def get_weather(
     except WeatherServiceError as exc:
         limitations.append(str(exc))
         return WeatherResponse(
-            found=True,
+            found=False,
             location=query,
             matched_on=matched_on,
             match_value=match_value,

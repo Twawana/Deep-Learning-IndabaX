@@ -81,7 +81,13 @@ def weather_status_for_ui(weather_data: dict[str, Any]) -> dict[str, Any]:
     rainfall = None if precip_today is None else f"{precip_today} mm (today/next)"
 
     recent_total = recent.get("total_precipitation_mm")
+    recent_days = recent.get("days")
     forecast_total = forecast.get("total_precipitation_mm")
+    recent_label = (
+        None
+        if recent_total is None
+        else f"{recent_total} mm (last {recent_days or '?'} days)"
+    )
 
     return {
         "found": True,
@@ -94,8 +100,8 @@ def weather_status_for_ui(weather_data: dict[str, Any]) -> dict[str, Any]:
         "rainfall": rainfall,
         "humidity": None,
         "recent_rainfall_mm": recent_total,
-        "rainfall_last_7_days": None if recent_total is None else f"{recent_total} mm",
-        "rainfall_last_30_days": None,
+        "rainfall_recent": recent_label,
+        "rainfall_last_7_days": recent_label,
         "forecast_total_mm": forecast_total,
         "drought_indicator": None,
         "source": weather_data.get("source"),
@@ -132,7 +138,7 @@ def build_dashboard(
         recommendations.extend((grazing.get("signals") or [])[:3])
         if grazing.get("confidence") == "low":
             recommendations.append(
-                "Treat advice as provisional — carrying capacity is not in the dataset."
+                "Treat advice as provisional - carrying capacity is not in the dataset."
             )
 
     if not pasture_data.get("found"):
@@ -167,11 +173,12 @@ def build_chat_response(
     if pasture_data.get("found"):
         sites = ", ".join(pasture_data.get("sites") or []) or "matched research sites"
         lines.append(
-            f"For {location} (mapped to {sites}), latest field observations "
-            f"({pasture_ui.get('observation_date') or 'date unknown'}) show "
+            f"For {location} (mapped to {sites}), cover observations "
+            f"(latest date {pasture_ui.get('observation_date') or 'unknown'}) show "
             f"vegetation cover around {_fmt(pasture_ui.get('vegetation_cover'), '%')}, "
             f"bush/woody presence around {_fmt(pasture_ui.get('bush_encroachment'), '%')}, "
-            f"and biomass around {_fmt(pasture_ui.get('biomass'))}."
+            f"and biomass around {_fmt(pasture_ui.get('biomass'))} "
+            f"(biomass may come from a separate plot-level measurement, not necessarily that same date)."
         )
     else:
         lines.append(
