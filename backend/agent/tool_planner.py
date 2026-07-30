@@ -74,7 +74,7 @@ def plan_tools(
 
     if intent == INTENT_PASTURE:
         return {
-            "tools": ["get_pasture_data"],
+            "tools": ["get_pasture_data", "get_weather"],
             "ask_clarification": False,
             "clarification_focus": [],
             "allow_recommendation": False,

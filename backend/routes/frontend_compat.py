@@ -265,9 +265,9 @@ def chat(body: ChatRequest) -> dict[str, Any]:
             if not piped.get("include_decision"):
                 advisor = {
                     **advisor,
-                    "pasture_data": {},
-                    "weather_data": {},
-                    "grazing_assessment": {},
+                    "pasture_data": advisor.get("pasture_data") or {},
+                    "weather_data": advisor.get("weather_data") or {},
+                    "grazing_assessment": advisor.get("grazing_assessment") or {},
                 }
             return build_chat_response(
                 message=body.message,
@@ -284,8 +284,10 @@ def chat(body: ChatRequest) -> dict[str, Any]:
                 farm_size_ha=body.farm_size_ha,
                 vision_override=vision,
             )
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001 — fall through to Oryx / local tools
+        import logging
+
+        logging.getLogger(__name__).warning("Chat pipeline failed: %s", exc)
 
     # --- Online: Oryx agentically chooses tools (fallback) ---
     if online and gemini_configured():

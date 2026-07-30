@@ -12,6 +12,7 @@ import {
   setSessionToken,
   upgradeSubscription,
 } from "../services/api";
+import { startAutoSync } from "../services/syncService";
 
 const AUTH_STORAGE_KEY = "farmar-auth-v2-cache";
 const GUEST_ASK_KEY = "farmar-guest-asks-v1";
@@ -140,15 +141,9 @@ export function AuthProvider({ children }) {
 
   // Push device offline queue → Supabase when connectivity returns
   useEffect(() => {
-    let stop = () => {};
-    import("../services/syncService")
-      .then(({ startAutoSync }) => {
-        stop = startAutoSync(
-          () => (state.currentUser?.id !== "guest" ? state.currentUser?.id : null)
-        );
-      })
-      .catch(() => {});
-    return () => stop();
+    return startAutoSync(
+      () => (state.currentUser?.id !== "guest" ? state.currentUser?.id : null)
+    );
   }, [state.currentUser?.id]);
 
   const withBackendState = async (request) => {

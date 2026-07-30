@@ -216,27 +216,46 @@ def _gemini_advise(
 def _status_fallback(evidence: dict[str, Any]) -> str:
     pasture = evidence.get("pasture") or {}
     rain = evidence.get("rainfall") or {}
-    bits = []
     region = (evidence.get("known_context") or {}).get("region") or "your area"
-    bits.append(f"Here is what I can see for {region} right now.")
+    bits = [f"Here is what I can see for {region} right now."]
+
     if pasture.get("message"):
         bits.append(str(pasture["message"]))
     elif pasture.get("found"):
-        bits.append("Pasture measurements are on file for this location.")
+        detail_bits = []
+        if pasture.get("cover_pct") is not None:
+            detail_bits.append(f"cover ~{float(pasture['cover_pct']):.0f}%")
+        if pasture.get("ndvi") is not None:
+            detail_bits.append(f"NDVI ~{float(pasture['ndvi']):.2f}")
+        if pasture.get("biomass") is not None:
+            detail_bits.append(f"biomass ~{float(pasture['biomass']):.0f} kg/ha")
+        if pasture.get("bush") is not None:
+            detail_bits.append(f"bush ~{float(pasture['bush']):.0f}%")
+        bits.append(
+            "Pasture readings: " + ", ".join(detail_bits) + "."
+            if detail_bits
+            else "Pasture measurements are on file for this location."
+        )
+
     if rain.get("message"):
         bits.append(str(rain["message"]))
     elif rain.get("found"):
         recent = rain.get("recent_rainfall_mm")
+        days = rain.get("recent_days") or 7
         bits.append(
-            f"Recent rainfall looks like about {recent} mm."
+            f"Recent rainfall looks like about {float(recent):.1f} mm over {days} days."
             if recent is not None
             else "I pulled the latest rainfall context."
         )
+
     if len(bits) == 1:
         bits.append(
             "I do not have a strong local reading yet — ask about a specific camp, "
             "rainfall, or whether the herd can stay another week."
         )
+    bits.append(
+        "This is guidance from available field data - always check conditions on the ground."
+    )
     return "\n\n".join(bits)
 
 

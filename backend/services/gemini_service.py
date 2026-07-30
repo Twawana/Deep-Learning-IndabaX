@@ -1,5 +1,5 @@
 """
-In Vision — Gemini agent for Namibian livestock decision support.
+Oryx — Gemini agent for Namibian livestock decision support.
 
 Not a scripted chatbot: the model chooses when to call pasture/dataset tools
 vs live weather (Open-Meteo) via Gemini function calling.
@@ -13,7 +13,7 @@ from typing import Any, Optional
 
 from tools.registry import GEMINI_TOOLS
 
-ASSISTANT_NAME_DEFAULT = "In Vision"
+ASSISTANT_NAME_DEFAULT = "Oryx"
 DEFAULT_MODEL = "gemini-2.0-flash"
 MAX_TOOL_ROUNDS = 5
 
@@ -66,7 +66,7 @@ def _tool_declarations():
             types.FunctionDeclaration(
                 name=tool["name"],
                 description=tool["description"],
-                parameters=tool["parameters"],
+                parameters_json_schema=tool["parameters"],
             )
         )
     return decls
@@ -129,26 +129,41 @@ def _execute_tool(name: str, args: dict[str, Any], ctx: dict[str, Any]) -> dict[
         return {"found": False, "error": f"Unknown tool: {name}"}
     call_args = _inject_defaults(name, args, ctx)
     try:
-        # Map alternate arg names used in schemas
-        if name == "run_what_if_scenario" and "current_herd_size" in call_args:
-            # scenario_tool uses current_herd_size
-            pass
-        if name in {"calculate_grazing_pressure", "estimate_safe_stocking"}:
-            # pasture_tool weather etc. use animal_type
-            pass
-        result = fn(**call_args)
+        if name == "run_what_if_scenario":
+            location = call_args.pop("location", ctx.get("location"))
+            question = call_args.pop("question", ctx.get("message") or "")
+            result = fn(location, question, **{
+                k: v for k, v in call_args.items()
+                if k in {"current_herd_size", "livestock_type", "land_tenure", "farm_size_ha"}
+            })
+        elif name == "compare_locations":
+            location_a = call_args.pop("location_a", ctx.get("location"))
+            location_b = call_args.pop("location_b", None)
+            if not location_b:
+                return {"found": False, "error": "compare_locations needs location_b"}
+            result = fn(location_a, location_b, **{
+                k: v for k, v in call_args.items() if k in {"land_tenure", "herd_size"}
+            })
+        elif "location" in call_args:
+            location = call_args.pop("location")
+            result = fn(location, **call_args)
+        else:
+            result = fn(**call_args)
         if not isinstance(result, dict):
             return {"found": True, "result": result}
         return result
     except TypeError:
-        # Drop unexpected kwargs and retry once
         import inspect
 
         sig = inspect.signature(fn)
         allowed = set(sig.parameters)
         trimmed = {k: v for k, v in call_args.items() if k in allowed}
         try:
-            result = fn(**trimmed)
+            if "location" in trimmed and list(sig.parameters)[0] == "location":
+                location = trimmed.pop("location")
+                result = fn(location, **trimmed)
+            else:
+                result = fn(**trimmed)
             return result if isinstance(result, dict) else {"found": True, "result": result}
         except Exception as exc:  # noqa: BLE001
             return {"found": False, "error": str(exc), "tool": name}
@@ -197,7 +212,7 @@ def run_agent(
     history: Optional[list[dict[str, str]]] = None,
 ) -> dict[str, Any]:
     """
-    Agentic loop: In Vision decides which tools to call, then answers.
+    Agentic loop: Oryx decides which tools to call, then answers.
 
     Returns:
       ok, text, model, assistant, tools_used, tool_results, rounds, error?
@@ -275,7 +290,7 @@ def run_agent(
                         "FARM CONTEXT:\n"
                         + "\n".join(f"- {b}" for b in profile_bits)
                         + f"\n\nFARMER MESSAGE:\n{message}\n\n"
-                        "Respond as In Vision. Greetings and small talk: warm reply, no tools. "
+                        "Respond as Oryx. Greetings and small talk: warm reply, no tools. "
                         "Off-topic: gentle redirect to livestock/grazing. "
                         "Farm questions: call only the tools you need, then answer with clear "
                         "reasoning in a natural, comforting voice — not a scripted report."
@@ -380,7 +395,7 @@ def run_agent(
             final_text = (getattr(wrap, "text", None) or "").strip()
 
         if not final_text:
-            raise GeminiError("In Vision returned no text after tool use.")
+            raise GeminiError("Oryx returned no text after tool use.")
 
         return {
             "ok": True,
